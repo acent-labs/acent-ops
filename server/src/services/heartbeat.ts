@@ -33,6 +33,7 @@ import {
   releaseRuntimeServicesForRun,
 } from "./workspace-runtime.js";
 import { issueService } from "./issues.js";
+import { executionWorkspaceService } from "./execution-workspaces.js";
 import {
   buildExecutionWorkspaceAdapterConfig,
   parseIssueExecutionWorkspaceSettings,
@@ -455,6 +456,7 @@ export function heartbeatService(db: Db) {
   const runLogStore = getRunLogStore();
   const secretsSvc = secretService(db);
   const issuesSvc = issueService(db);
+  const executionWorkspacesSvc = executionWorkspaceService(db);
   const activeRunExecutions = new Set<string>();
 
   async function getAgent(agentId: string) {
@@ -1130,6 +1132,9 @@ export function heartbeatService(db: Db) {
       ? await db
           .select({
             projectId: issues.projectId,
+            projectWorkspaceId: issues.projectWorkspaceId,
+            executionWorkspaceId: issues.executionWorkspaceId,
+            executionWorkspacePreference: issues.executionWorkspacePreference,
             assigneeAgentId: issues.assigneeAgentId,
             assigneeAdapterOverrides: issues.assigneeAdapterOverrides,
             executionWorkspaceSettings: issues.executionWorkspaceSettings,
@@ -1197,6 +1202,10 @@ export function heartbeatService(db: Db) {
             id: issues.id,
             identifier: issues.identifier,
             title: issues.title,
+            projectId: issues.projectId,
+            projectWorkspaceId: issues.projectWorkspaceId,
+            executionWorkspaceId: issues.executionWorkspaceId,
+            executionWorkspacePreference: issues.executionWorkspacePreference,
           })
           .from(issues)
           .where(and(eq(issues.id, issueId), eq(issues.companyId, agent.companyId)))
@@ -1219,6 +1228,67 @@ export function heartbeatService(db: Db) {
         companyId: agent.companyId,
       },
     });
+    const existingExecutionWorkspace =
+      issueRef?.executionWorkspaceId ? await executionWorkspacesSvc.getById(issueRef.executionWorkspaceId) : null;
+    const resolvedProjectId = executionWorkspace.projectId ?? issueRef?.projectId ?? executionProjectId ?? null;
+    const resolvedProjectWorkspaceId = issueRef?.projectWorkspaceId ?? resolvedWorkspace.workspaceId ?? null;
+    const shouldReuseExisting =
+      issueRef?.executionWorkspacePreference === "reuse_existing" &&
+      existingExecutionWorkspace &&
+      existingExecutionWorkspace.status !== "archived";
+    const persistedExecutionWorkspace = shouldReuseExisting && existingExecutionWorkspace
+      ? await executionWorkspacesSvc.update(existingExecutionWorkspace.id, {
+          cwd: executionWorkspace.cwd,
+          repoUrl: executionWorkspace.repoUrl,
+          baseRef: executionWorkspace.repoRef,
+          branchName: executionWorkspace.branchName,
+          providerType: executionWorkspace.strategy === "git_worktree" ? "git_worktree" : "local_fs",
+          providerRef: executionWorkspace.worktreePath,
+          status: "active",
+          lastUsedAt: new Date(),
+          metadata: {
+            ...(existingExecutionWorkspace.metadata ?? {}),
+            source: executionWorkspace.source,
+            createdByRuntime: executionWorkspace.created,
+          },
+        })
+      : resolvedProjectId
+        ? await executionWorkspacesSvc.create({
+            companyId: agent.companyId,
+            projectId: resolvedProjectId,
+            projectWorkspaceId: resolvedProjectWorkspaceId,
+            sourceIssueId: issueRef?.id ?? null,
+            mode:
+              executionWorkspaceMode === "isolated_workspace"
+                ? "isolated_workspace"
+                : executionWorkspaceMode === "operator_branch"
+                  ? "operator_branch"
+                  : executionWorkspaceMode === "agent_default"
+                    ? "adapter_managed"
+                    : "shared_workspace",
+            strategyType: executionWorkspace.strategy === "git_worktree" ? "git_worktree" : "project_primary",
+            name: executionWorkspace.branchName ?? issueRef?.identifier ?? `workspace-${agent.id.slice(0, 8)}`,
+            status: "active",
+            cwd: executionWorkspace.cwd,
+            repoUrl: executionWorkspace.repoUrl,
+            baseRef: executionWorkspace.repoRef,
+            branchName: executionWorkspace.branchName,
+            providerType: executionWorkspace.strategy === "git_worktree" ? "git_worktree" : "local_fs",
+            providerRef: executionWorkspace.worktreePath,
+            lastUsedAt: new Date(),
+            openedAt: new Date(),
+            metadata: {
+              source: executionWorkspace.source,
+              createdByRuntime: executionWorkspace.created,
+            },
+          })
+        : null;
+    if (issueId && persistedExecutionWorkspace && issueRef?.executionWorkspaceId !== persistedExecutionWorkspace.id) {
+      await issuesSvc.update(issueId, {
+        executionWorkspaceId: persistedExecutionWorkspace.id,
+        ...(resolvedProjectWorkspaceId ? { projectWorkspaceId: resolvedProjectWorkspaceId } : {}),
+      });
+    }
     const runtimeSessionResolution = resolveRuntimeSessionParamsForWorkspace({
       agentId: agent.id,
       previousSessionParams,
