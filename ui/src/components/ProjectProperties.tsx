@@ -230,7 +230,13 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
   const updateWorkspace = useMutation({
     mutationFn: ({ workspaceId, data }: { workspaceId: string; data: Record<string, unknown> }) =>
       projectsApi.updateWorkspace(project.id, workspaceId, data),
-    onSuccess: invalidateProject,
+    onSuccess: () => {
+      setWorkspaceCwd("");
+      setWorkspaceRepoUrl("");
+      setWorkspaceMode(null);
+      setWorkspaceError(null);
+      invalidateProject();
+    },
   });
 
   const removeGoal = (goalId: string) => {
@@ -528,47 +534,83 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                     <span className="truncate">{formatRepoUrl(codebase.repoUrl)}</span>
                     <ExternalLink className="h-3 w-3 shrink-0" />
                   </a>
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={clearRepoWorkspace}
-                    aria-label="Clear repo"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      className="h-6 px-2"
+                      onClick={() => {
+                        setWorkspaceMode("repo");
+                        setWorkspaceRepoUrl(codebase.repoUrl ?? "");
+                        setWorkspaceError(null);
+                      }}
+                    >
+                      Change repo
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={clearRepoWorkspace}
+                      aria-label="Clear repo"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
                 </div>
               ) : (
-                <div className="text-xs text-muted-foreground">Not set.</div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-xs text-muted-foreground">Not set.</div>
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    className="h-6 px-2"
+                    onClick={() => {
+                      setWorkspaceMode("repo");
+                      setWorkspaceRepoUrl(codebase.repoUrl ?? "");
+                      setWorkspaceError(null);
+                    }}
+                  >
+                    Set repo
+                  </Button>
+                </div>
               )}
             </div>
 
             <div className="space-y-1">
               <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Local folder</div>
-              {codebase.localFolder ? (
-                <div className="flex items-center justify-between gap-2">
-                  <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">{codebase.localFolder}</span>
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0 space-y-1">
+                  <div className="min-w-0 truncate font-mono text-xs text-muted-foreground">
+                    {codebase.effectiveLocalFolder}
+                  </div>
+                  {codebase.origin === "managed_checkout" && (
+                    <div className="text-[11px] text-muted-foreground">Paperclip-managed folder.</div>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
                   <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={clearLocalWorkspace}
-                    aria-label="Clear local folder"
+                    variant="outline"
+                    size="xs"
+                    className="h-6 px-2"
+                    onClick={() => {
+                      setWorkspaceMode("local");
+                      setWorkspaceCwd(codebase.localFolder ?? "");
+                      setWorkspaceError(null);
+                    }}
                   >
-                    <Trash2 className="h-3 w-3" />
+                    {codebase.localFolder ? "Change local folder" : "Set local folder"}
                   </Button>
+                  {codebase.localFolder ? (
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={clearLocalWorkspace}
+                      aria-label="Clear local folder"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  ) : null}
                 </div>
-              ) : (
-                <div className="space-y-1">
-                  <div className="text-xs text-muted-foreground">Not set.</div>
-                  <div className="text-[11px] text-muted-foreground">Paperclip will use a managed checkout instead.</div>
-                </div>
-              )}
-            </div>
-
-            <div className="rounded-md border border-border/60 bg-muted/20 px-2.5 py-2">
-              <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Effective working folder</div>
-              <div className="mt-1 break-all font-mono text-xs text-foreground">{codebase.effectiveLocalFolder}</div>
-              <div className="mt-1 text-[11px] text-muted-foreground">
-                {codebase.origin === "local_folder" ? "Using your local folder." : "Paperclip-managed folder."}
               </div>
             </div>
 
@@ -624,32 +666,6 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
               </div>
             ) : null}
           </div>
-          <div className="flex flex-col items-start gap-2">
-            <Button
-              variant="outline"
-              size="xs"
-              className="h-7 px-2.5"
-              onClick={() => {
-                setWorkspaceMode("local");
-                setWorkspaceCwd(codebase.localFolder ?? "");
-                setWorkspaceError(null);
-              }}
-            >
-              {codebase.localFolder ? "Change local folder" : "Set local folder"}
-            </Button>
-            <Button
-              variant="outline"
-              size="xs"
-              className="h-7 px-2.5"
-              onClick={() => {
-                setWorkspaceMode("repo");
-                setWorkspaceRepoUrl(codebase.repoUrl ?? "");
-                setWorkspaceError(null);
-              }}
-            >
-              {codebase.repoUrl ? "Change repo" : "Set repo"}
-            </Button>
-          </div>
           {workspaceMode === "local" && (
             <div className="space-y-1.5 rounded-md border border-border p-2">
               <div className="flex items-center gap-2">
@@ -666,7 +682,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                   variant="outline"
                   size="xs"
                   className="h-6 px-2"
-                  disabled={!workspaceCwd.trim() || createWorkspace.isPending}
+                  disabled={!workspaceCwd.trim() || createWorkspace.isPending || updateWorkspace.isPending}
                   onClick={submitLocalWorkspace}
                 >
                   Save
@@ -699,7 +715,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
                   variant="outline"
                   size="xs"
                   className="h-6 px-2"
-                  disabled={!workspaceRepoUrl.trim() || createWorkspace.isPending}
+                  disabled={!workspaceRepoUrl.trim() || createWorkspace.isPending || updateWorkspace.isPending}
                   onClick={submitRepoWorkspace}
                 >
                   Save
