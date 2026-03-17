@@ -205,6 +205,9 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
 
   const invalidateProject = () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(project.id) });
+    if (project.urlKey !== project.id) {
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(project.urlKey) });
+    }
     if (selectedCompanyId) {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.list(selectedCompanyId) });
     }
