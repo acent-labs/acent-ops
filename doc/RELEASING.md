@@ -53,7 +53,7 @@ Canaries only cover the first two surfaces plus an internal traceability tag.
 
 ### Canary
 
-Every push to `master` runs [`.github/workflows/release-canary.yml`](../.github/workflows/release-canary.yml).
+Every push to `master` runs the canary path inside [`.github/workflows/release.yml`](../.github/workflows/release.yml).
 
 It:
 
@@ -70,7 +70,7 @@ npx paperclipai@canary onboard
 
 ### Stable
 
-Use [`.github/workflows/release-stable.yml`](../.github/workflows/release-stable.yml) from the Actions tab.
+Use [`.github/workflows/release.yml`](../.github/workflows/release.yml) from the Actions tab with the manual `workflow_dispatch` inputs.
 
 Inputs:
 

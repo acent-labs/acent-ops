@@ -158,20 +158,17 @@ This is the cleanest answer to the open-repo security concern.
 
 ### Concrete controls
 
-#### 1. Split canary and stable into separate workflow files
+#### 1. Use one release workflow file
 
-Do not use one workflow file for both.
+Use one workflow filename for both canary and stable publishing:
 
-Recommended:
-
-- `.github/workflows/release-canary.yml`
-- `.github/workflows/release-stable.yml`
+- `.github/workflows/release.yml`
 
 Why:
 
 - npm trusted publishing is configured per workflow filename
-- canary and stable need different blast radii
-- stable should have stronger GitHub environment rules than canary
+- npm currently allows one trusted publisher configuration per package
+- GitHub environments can still provide separate canary/stable approval rules inside the same workflow
 
 #### 2. Use separate GitHub environments
 
@@ -438,7 +435,7 @@ That is acceptable if canaries stay clearly separate:
 
 ### Phase 1: Security foundation
 
-1. Create `release-canary.yml` and `release-stable.yml`
+1. Create `release.yml`
 2. Configure npm trusted publishers for all public packages
 3. Create `npm-canary` and `npm-stable` environments
 4. Add `CODEOWNERS` protection for release files

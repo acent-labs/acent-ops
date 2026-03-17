@@ -9,8 +9,7 @@ This document covers the GitHub and npm setup required for the current Paperclip
 
 Repo-side files that depend on this setup:
 
-- `.github/workflows/release-canary.yml`
-- `.github/workflows/release-stable.yml`
+- `.github/workflows/release.yml`
 - `.github/CODEOWNERS`
 
 Note:
@@ -24,8 +23,7 @@ Before touching GitHub or npm settings, merge the release automation code so the
 
 Required files:
 
-- `.github/workflows/release-canary.yml`
-- `.github/workflows/release-stable.yml`
+- `.github/workflows/release.yml`
 - `.github/CODEOWNERS`
 
 ## 2. Configure npm Trusted Publishing
@@ -46,21 +44,26 @@ For each package:
 2. go to the package settings / publishing access area
 3. add a trusted publisher for the GitHub repository `paperclipai/paperclip`
 
-### 2.2. Add two trusted publisher entries per package
+### 2.2. Add one trusted publisher entry per package
 
-Because npm trusted publishing is tied to the workflow filename, configure both:
+npm currently allows one trusted publisher configuration per package.
 
-- workflow: `.github/workflows/release-canary.yml`
-- workflow: `.github/workflows/release-stable.yml`
+Configure:
+
+- workflow: `.github/workflows/release.yml`
 
 Repository:
 
 - `paperclipai/paperclip`
 
-Branch expectations:
+Environment name:
 
-- canary workflow should only ever run from `master`
-- stable workflow is manual but should also be restricted to `master` by GitHub environment policy
+- leave the npm trusted-publisher environment field blank
+
+Why:
+
+- the single `release.yml` workflow handles both canary and stable publishing
+- GitHub environments `npm-canary` and `npm-stable` still enforce different approval rules on the GitHub side
 
 ### 2.3. Verify trusted publishing before removing old auth
 
@@ -167,8 +170,7 @@ If `@dotta` is not the right reviewer identity in the public repo, change it bef
 
 These files should always trigger code owner review:
 
-- `.github/workflows/release-canary.yml`
-- `.github/workflows/release-stable.yml`
+- `.github/workflows/release.yml`
 - `scripts/release.sh`
 - `scripts/release-lib.sh`
 - `scripts/release-package-map.mjs`
@@ -198,7 +200,7 @@ This keeps LLM spending intentional and avoids a high-value token sitting in Act
 After setup:
 
 1. merge a harmless commit to `master`
-2. open the `Release Canary` workflow run
+2. open the `Release` workflow run triggered by that push
 3. confirm it passes verification
 4. confirm publish succeeds under the `npm-canary` environment
 5. confirm npm now shows a new `canary` release
@@ -215,7 +217,7 @@ npx paperclipai@canary onboard
 After at least one good canary exists:
 
 1. prepare `releases/vYYYY.M.D.md` on the source commit you want to promote
-2. open `Actions` -> `Release Stable`
+2. open `Actions` -> `Release`
 3. run it with:
    - `source_ref`: the tested commit SHA or canary tag source commit
    - `stable_date`: leave blank or set the intended UTC date
