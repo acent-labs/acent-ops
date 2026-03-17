@@ -61,6 +61,10 @@ export interface MarkdownEditorRef {
   focus: () => void;
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /* ---- Mention detection helpers ---- */
 
 interface MentionState {
@@ -255,9 +259,10 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
             // so the cursor isn't stuck right next to the image.
             setTimeout(() => {
               const current = latestValueRef.current;
+              const escapedSrc = escapeRegExp(src);
               const updated = current.replace(
-                /!\[([^\]]*)\]\(([^)]+)\)(?!\n\n)/g,
-                "![$1]($2)\n\n",
+                new RegExp(`(!\\[[^\\]]*\\]\\(${escapedSrc}\\))(?!\\n\\n)`, "g"),
+                "$1\n\n",
               );
               if (updated !== current) {
                 latestValueRef.current = updated;

@@ -461,6 +461,9 @@ export function ProjectDetail() {
     if (cachedTab === "configuration") {
       return <Navigate to={`/projects/${canonicalProjectRef}/configuration`} replace />;
     }
+    if (cachedTab === "budget") {
+      return <Navigate to={`/projects/${canonicalProjectRef}/budget`} replace />;
+    }
     if (isProjectPluginTab(cachedTab)) {
       return <Navigate to={`/projects/${canonicalProjectRef}?tab=${encodeURIComponent(cachedTab)}`} replace />;
     }

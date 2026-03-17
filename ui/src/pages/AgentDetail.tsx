@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useParams, useNavigate, Link, Navigate, useBeforeUnload } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { agentsApi, type AgentKey, type ClaudeLoginResult } from "../api/agents";
+import { agentsApi, type AgentKey, type ClaudeLoginResult, type AvailableSkill } from "../api/agents";
 import { budgetsApi } from "../api/budgets";
 import { heartbeatsApi } from "../api/heartbeats";
 import { ApiError } from "../api/client";
@@ -30,6 +30,7 @@ import { ScrollToBottom } from "../components/ScrollToBottom";
 import { formatCents, formatDate, relativeTime, formatTokens, visibleRunCostUsd } from "../lib/utils";
 import { cn } from "../lib/utils";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Tabs } from "@/components/ui/tabs";
 import {
   Popover,
@@ -743,7 +744,6 @@ export function AgentDetail() {
       {activeView === "skills" && (
         <SkillsTab
           agent={agent}
-          companyId={resolvedCompanyId ?? undefined}
         />
       )}
 
@@ -1213,11 +1213,16 @@ function ConfigurationTab({
   );
 }
 
-function SkillsTab({ agent }: { agent: Agent; companyId?: string }) {
+function SkillsTab({ agent }: { agent: Agent }) {
   const instructionsPath =
     typeof agent.adapterConfig?.instructionsFilePath === "string" && agent.adapterConfig.instructionsFilePath.trim().length > 0
       ? agent.adapterConfig.instructionsFilePath
       : null;
+  const { data, isLoading, error } = useQuery({
+    queryKey: queryKeys.skills.available,
+    queryFn: () => agentsApi.availableSkills(),
+  });
+  const skills = data?.skills ?? [];
 
   return (
     <div className="space-y-4">
@@ -1225,7 +1230,7 @@ function SkillsTab({ agent }: { agent: Agent; companyId?: string }) {
         <h3 className="text-sm font-medium">Skills</h3>
         <p className="text-sm text-muted-foreground">
           Skills are reusable instruction bundles the agent can invoke from its local tool environment.
-          This view keeps the tab compile-safe and shows the current instructions file path while the broader skills listing work continues elsewhere in the tree.
+          This view shows the current instructions file and the skills currently visible to the local agent runtime.
         </p>
         <p className="text-xs text-muted-foreground">
           Agent: <span className="font-mono">{agent.name}</span>
@@ -1238,7 +1243,44 @@ function SkillsTab({ agent }: { agent: Agent; companyId?: string }) {
             {instructionsPath ?? "No instructions file configured for this agent."}
           </div>
         </div>
+
+        <div className="space-y-2">
+          <div className="text-xs uppercase tracking-wide text-muted-foreground">
+            Available skills
+          </div>
+          {isLoading ? (
+            <p className="text-sm text-muted-foreground">Loading available skills…</p>
+          ) : error ? (
+            <p className="text-sm text-destructive">
+              {error instanceof Error ? error.message : "Failed to load available skills."}
+            </p>
+          ) : skills.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No local skills were found.</p>
+          ) : (
+            <div className="space-y-2">
+              {skills.map((skill) => (
+                <SkillRow key={skill.name} skill={skill} />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
+    </div>
+  );
+}
+
+function SkillRow({ skill }: { skill: AvailableSkill }) {
+  return (
+    <div className="rounded-md border border-border bg-muted/20 px-3 py-2 space-y-1.5">
+      <div className="flex items-center gap-2">
+        <span className="font-mono text-sm">{skill.name}</span>
+        <Badge variant={skill.isPaperclipManaged ? "secondary" : "outline"}>
+          {skill.isPaperclipManaged ? "Paperclip" : "Local"}
+        </Badge>
+      </div>
+      <p className="text-sm text-muted-foreground">
+        {skill.description || "No description available."}
+      </p>
     </div>
   );
 }
