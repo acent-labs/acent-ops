@@ -6,7 +6,7 @@ metadata:
   sources:
     -
       kind: "github-dir"
-      commit: "be8da860627178ef87db253a38c6afa94418e30c"
+      commit: "a1e88b14d493853df21ad18d0b5f8927a5ff300b"
       path: "skills/paperclip-create-plugin"
       repo: "paperclipai/paperclip"
       trackingRef: "master"
