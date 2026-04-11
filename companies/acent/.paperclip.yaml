@@ -1,0 +1,127 @@
+schema: "paperclip/v1"
+agents:
+  brand-director:
+    role: "general"
+    capabilities: "브랜드 일관성 관리, 이메일/뉴스레터 전략 수립, 비주얼 아이덴티티 감독. Email Writer를 관리한다."
+    adapter:
+      config:
+        dangerouslySkipPermissions: true
+        model: "claude-sonnet-4-6"
+      type: "claude_local"
+  ceo:
+    role: "ceo"
+    adapter:
+      config:
+        dangerouslySkipPermissions: true
+        model: "claude-opus-4-6"
+      type: "claude_local"
+    runtime:
+      heartbeat:
+        intervalSec: 300
+        maxConcurrentRuns: 1
+    permissions:
+      canCreateAgents: true
+  cmo:
+    role: "general"
+    capabilities: "마케팅 전략 수립, 콘텐츠 팀 조율, 채널별 성과 분석, 브랜드 일관성 관리. Content/Growth/Brand Director를 관리하며 전사 마케팅 목표를 CEO에게 보고한다."
+    adapter:
+      config:
+        dangerouslySkipPermissions: true
+        model: "claude-opus-4-6"
+      type: "claude_local"
+    permissions:
+      canCreateAgents: true
+  content-director:
+    role: "general"
+    capabilities: "콘텐츠 캘린더 관리, 품질 게이트(90점 이상) 운영, 톤/보이스 일관성 감독. LinkedIn Writer, X Writer, Blog Writer, YouTube Producer를 관리한다."
+    adapter:
+      config:
+        dangerouslySkipPermissions: true
+        model: "claude-sonnet-4-6"
+      type: "claude_local"
+  cto:
+    role: "cto"
+    icon: "code"
+    capabilities: "Owns technical roadmap, architecture, product engineering, infrastructure, devtools, and code quality. Manages future engineering hires. Delegates implementation to ICs and reviews their output."
+    adapter:
+      config:
+        dangerouslySkipPermissions: true
+        model: "claude-opus-4-6"
+      type: "claude_local"
+    runtime:
+      heartbeat:
+        enabled: true
+        intervalSec: 300
+        maxConcurrentRuns: 1
+  email-writer:
+    role: "general"
+    capabilities: "뉴스레터, 드립 캠페인, 리드 너처링 이메일 작성. LinkedIn/X/Reddit 콘텐츠를 이메일 포맷으로 재가공하여 구독자 리텐션을 높인다."
+    adapter:
+      config:
+        dangerouslySkipPermissions: true
+        model: "claude-sonnet-4-6"
+      type: "claude_local"
+  growth-analyst:
+    role: "general"
+    capabilities: "A/B 실험 설계 및 분석, 전환율 추적, 주간 성장 스코어카드 작성. 채널별 성과 데이터를 기반으로 최적화 방향을 제시한다."
+    adapter:
+      config:
+        dangerouslySkipPermissions: true
+        model: "claude-sonnet-4-6"
+      type: "claude_local"
+  growth-director:
+    role: "general"
+    capabilities: "A/B 테스트 설계, 퍼널 최적화, 데이터 기반 의사결정. SEO Analyst와 Growth Analyst를 관리하며 주간 성장 스코어카드를 CMO에게 보고한다."
+    adapter:
+      config:
+        dangerouslySkipPermissions: true
+        model: "claude-sonnet-4-6"
+      type: "claude_local"
+  linkedin-writer:
+    role: "general"
+    capabilities: "LinkedIn 게시물, 쓰레드, 캐러셀 초안 작성. 전문성과 신뢰감 있는 톤으로 B2B 오디언스를 타겟팅한다. 해시태그 전략, 게시 타이밍 최적화."
+    adapter:
+      config:
+        dangerouslySkipPermissions: true
+        model: "claude-sonnet-4-6"
+      type: "claude_local"
+  reddit-writer:
+    role: "general"
+    capabilities: "Reddit 게시물, 댓글, AMA 초안 작성. 서브레딧별 문화와 규칙을 이해하고 커뮤니티 친화적 톤으로 작성. 자연스러운 가치 제공 중심, 노골적 홍보 지양."
+    adapter:
+      config:
+        dangerouslySkipPermissions: true
+        model: "claude-sonnet-4-6"
+      type: "claude_local"
+  seo-analyst:
+    role: "general"
+    capabilities: "키워드 리서치, 트렌드 모니터링, 경쟁사 콘텐츠 분석. 채널별 검색 최적화 인사이트를 Writer들에게 제공한다."
+    adapter:
+      config:
+        dangerouslySkipPermissions: true
+        model: "claude-sonnet-4-6"
+      type: "claude_local"
+  x-writer:
+    role: "general"
+    capabilities: "X 게시물, 쓰레드, 트렌드 반응 콘텐츠 작성. 짧고 임팩트 있는 카피, 밈 활용, 트렌드 해킹. 바이럴 잠재력 극대화."
+    adapter:
+      config:
+        dangerouslySkipPermissions: true
+        model: "claude-sonnet-4-6"
+      type: "claude_local"
+company:
+  logoPath: "images/company-logo.jpg"
+sidebar:
+  agents:
+    - "ceo"
+    - "cmo"
+    - "cto"
+    - "brand-director"
+    - "content-director"
+    - "growth-director"
+    - "email-writer"
+    - "linkedin-writer"
+    - "reddit-writer"
+    - "x-writer"
+    - "growth-analyst"
+    - "seo-analyst"
