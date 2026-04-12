@@ -5,13 +5,13 @@
 <p align="center">
   <a href="#quickstart"><strong>Quickstart</strong></a> &middot;
   <a href="https://paperclip.ing/docs"><strong>Docs</strong></a> &middot;
-  <a href="https://github.com/paperclipai/paperclip"><strong>GitHub</strong></a> &middot;
+  <a href="https://github.com/acent-labs/acent-ops"><strong>GitHub</strong></a> &middot;
   <a href="https://discord.gg/m4HZY7xNG3"><strong>Discord</strong></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/paperclipai/paperclip/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License" /></a>
-  <a href="https://github.com/paperclipai/paperclip/stargazers"><img src="https://img.shields.io/github/stars/paperclipai/paperclip?style=flat" alt="Stars" /></a>
+  <a href="https://github.com/acent-labs/acent-ops/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT License" /></a>
+  <a href="https://github.com/acent-labs/acent-ops/stargazers"><img src="https://img.shields.io/github/stars/acent-labs/acent-ops?style=flat" alt="Stars" /></a>
   <a href="https://discord.gg/m4HZY7xNG3"><img src="https://img.shields.io/discord/000000000?label=discord" alt="Discord" /></a>
 </p>
 
@@ -25,7 +25,7 @@
 
 ## What is Paperclip?
 
-# Open-source orchestration for zero-human companies
+# Open-source control plane for autonomous AI companies
 
 **If OpenClaw is an _employee_, Paperclip is the _company_**
 
@@ -43,7 +43,30 @@ It looks like a task manager — but under the hood it has org charts, budgets, 
 
 <br/>
 
-> **COMING SOON: Clipmart** — Download and run entire companies with one click. Browse pre-built company templates — full org structures, agent configs, and skills — and import them into your Paperclip instance in seconds.
+## Repository At A Glance
+
+Paperclip sits above individual agent runtimes. The board operator defines the mission, builds the org chart, assigns work, approves governed actions, and monitors budgets, heartbeats, transcripts, and costs. Agents themselves run through adapters and report back into the control plane.
+
+This repository contains the full product surface:
+
+- `server/` — Express API, auth, orchestration, scheduling, secrets, storage, plugins
+- `ui/` — React board UI for companies, org charts, issues, approvals, costs, routines, plugins, and adapters
+- `packages/db/` + `packages/shared/` — Drizzle schema, migrations, shared types, validators, constants
+- `packages/adapters/` — built-in adapters for Claude Code, Codex, Cursor, Gemini CLI, Hermes, OpenCode, Pi, and OpenClaw gateway
+- `packages/plugins/` — plugin SDK, scaffolding, and example plugins
+- `cli/` + `scripts/` — onboarding, dev runner, worktree, backup, release, and operational tooling
+
+> Repository note: this checkout is `acent-labs/acent-ops`, with `paperclipai/paperclip` as upstream. Prefer the docs and code in this repository over assumptions copied from other forks or older upstream snapshots.
+
+## Read This First
+
+If you are trying to understand the product or contribute changes, read these in order:
+
+1. `doc/GOAL.md`
+2. `doc/PRODUCT.md`
+3. `doc/SPEC-implementation.md`
+4. `doc/DEVELOPING.md`
+5. `doc/DATABASE.md`
 
 <br/>
 
@@ -65,6 +88,17 @@ It looks like a task manager — but under the hood it has org charts, budgets, 
 </div>
 
 <br/>
+
+Built-in adapters in this repo currently include `claude_local`, `codex_local`, `cursor`, `gemini_local`, `hermes_local`, `opencode_local`, `pi_local`, `openclaw_gateway`, plus internal `process` and `http` adapters. External adapters can also be loaded through the plugin system.
+
+## What Exists In The Product Today
+
+- Company-scoped multi-company data model with strict boundaries between companies
+- Board-driven control plane for goals, projects, issues, comments, approvals, and org structure
+- Heartbeat runs, routines, and agent activity tracking for ongoing autonomous work
+- Budgeting and cost visibility with monthly limits and hard-stop behavior
+- Local-first development with embedded PostgreSQL when `DATABASE_URL` is unset
+- Plugin and adapter extension points for custom integrations and execution environments
 
 ## Paperclip is right for you if
 
@@ -182,8 +216,8 @@ If you already have Paperclip configured, rerunning `onboard` keeps the existing
 Or manually:
 
 ```bash
-git clone https://github.com/paperclipai/paperclip.git
-cd paperclip
+git clone https://github.com/acent-labs/acent-ops.git
+cd acent-ops
 pnpm install
 pnpm dev
 ```

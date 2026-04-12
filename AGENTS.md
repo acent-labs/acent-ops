@@ -4,10 +4,22 @@ Guidance for human and AI contributors working in this repository.
 
 ## 1. Purpose
 
-Paperclip is a control plane for AI-agent companies.
+Paperclip is a control plane for autonomous AI companies.
+This repository is the product itself: board UI, REST API/orchestration layer, database schema, built-in adapters, plugin infrastructure, CLI, and local-dev tooling.
 The current implementation target is V1 and is defined in `doc/SPEC-implementation.md`.
 
-## 2. Read This First
+## 2. Product Model In 60 Seconds
+
+Keep this mental model in mind before touching code:
+
+- A **company** is the primary boundary. Core entities are company-scoped and cross-company access is a bug.
+- The **board operator** manages company goals, projects, issues, approvals, budgets, routines, and interventions.
+- **Agents are employees**, connected through adapters. Paperclip orchestrates them; it does not replace their runtime.
+- **Goals -> projects -> issues -> comments** are the built-in work and communication substrate.
+- **Heartbeats, routines, and activity logs** are how work gets triggered, monitored, and audited.
+- **Costs, approvals, and governance controls** are first-class product features, not afterthoughts.
+
+## 3. Read This First
 
 Before making changes, read in this order:
 
@@ -20,7 +32,17 @@ Before making changes, read in this order:
 `doc/SPEC.md` is long-horizon product context.
 `doc/SPEC-implementation.md` is the concrete V1 build contract.
 
-## 3. Repo Map
+## 4. What Exists In This Repo Today
+
+Current top-level product surface in code:
+
+- `server/src/routes/` exposes company, agent, goal, project, issue, approval, cost, routine, plugin, adapter, secrets, access, and dashboard APIs.
+- `ui/src/pages/` contains board views for dashboard, companies, org chart, agents, issues, approvals, routines, costs, plugin manager, adapter manager, and settings.
+- `packages/adapters/` ships built-in adapters for Claude Code, Codex, Cursor, Gemini CLI, Hermes, OpenCode, Pi, and OpenClaw gateway.
+- `packages/plugins/` contains the plugin SDK, scaffolding, and example plugins for extending the control plane.
+- `cli/` and `scripts/` contain onboarding, dev-runner, worktree, release, backup, and operational commands.
+
+## 5. Repo Map
 
 - `server/`: Express REST API and orchestration services
 - `ui/`: React + Vite board UI
@@ -31,9 +53,9 @@ Before making changes, read in this order:
 - `packages/plugins/`: plugin system packages
 - `doc/`: operational and product docs
 
-## 4. Dev Setup (Auto DB)
+## 6. Dev Setup (Auto DB)
 
-Use embedded PGlite in dev by leaving `DATABASE_URL` unset.
+Use embedded PostgreSQL in dev by leaving `DATABASE_URL` unset.
 
 ```sh
 pnpm install
@@ -55,11 +77,13 @@ curl http://localhost:3100/api/companies
 Reset local dev DB:
 
 ```sh
-rm -rf data/pglite
+rm -rf ~/.paperclip/instances/default/db
 pnpm dev
 ```
 
-## 5. Core Engineering Rules
+If this repo has a worktree-local `.paperclip/.env`, Paperclip commands target that repo-local instance instead of the default `~/.paperclip/instances/default` path.
+
+## 7. Core Engineering Rules
 
 1. Keep changes company-scoped.
 Every domain entity should be scoped to a company and company boundaries must be enforced in routes/services.
@@ -84,7 +108,7 @@ Prefer additive updates. Keep `doc/SPEC.md` and `doc/SPEC-implementation.md` ali
 5. Keep repo plan docs dated and centralized.
 When you are creating a plan file in the repository itself, new plan documents belong in `doc/plans/` and should use `YYYY-MM-DD-slug.md` filenames. This does not replace Paperclip issue planning: if a Paperclip issue asks for a plan, update the issue `plan` document per the `paperclip` skill instead of creating a repo markdown file.
 
-## 6. Database Change Workflow
+## 8. Database Change Workflow
 
 When changing data model:
 
@@ -106,7 +130,7 @@ Notes:
 - `packages/db/drizzle.config.ts` reads compiled schema from `dist/schema/*.js`
 - `pnpm db:generate` compiles `packages/db` first
 
-## 7. Verification Before Hand-off
+## 9. Verification Before Hand-off
 
 Run this full check before claiming done:
 
@@ -118,7 +142,7 @@ pnpm build
 
 If anything cannot be run, explicitly report what was not run and why.
 
-## 8. API and Auth Expectations
+## 10. API and Auth Expectations
 
 - Base path: `/api`
 - Board access is treated as full-control operator context
@@ -132,13 +156,13 @@ When adding endpoints:
 - write activity log entries for mutations
 - return consistent HTTP errors (`400/401/403/404/409/422/500`)
 
-## 9. UI Expectations
+## 11. UI Expectations
 
 - Keep routes and nav aligned with available API surface
 - Use company selection context for company-scoped pages
 - Surface failures clearly; do not silently ignore API errors
 
-## 10. Pull Request Requirements
+## 12. Pull Request Requirements
 
 When creating a pull request (via `gh pr create` or any other method), you **must** read and fill in every section of [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md). Do not craft ad-hoc PR bodies — use the template as the structure for your PR description. Required sections:
 
@@ -149,7 +173,7 @@ When creating a pull request (via `gh pr create` or any other method), you **mus
 - **Model Used** — the AI model that produced or assisted with the change (provider, exact model ID, context window, capabilities). Write "None — human-authored" if no AI was used.
 - **Checklist** — all items checked
 
-## 11. Definition of Done
+## 13. Definition of Done
 
 A change is done when all are true:
 
@@ -159,43 +183,16 @@ A change is done when all are true:
 4. Docs updated when behavior or commands change
 5. PR description follows the [PR template](.github/PULL_REQUEST_TEMPLATE.md) with all sections filled in (including Model Used)
 
-## 11. Fork-Specific: HenkDz/paperclip
+## 14. Fork-Specific Notes
 
-This is a fork of `paperclipai/paperclip` with QoL patches and an **external-only** Hermes adapter story on branch `feat/externalize-hermes-adapter` ([tree](https://github.com/HenkDz/paperclip/tree/feat/externalize-hermes-adapter)).
+This checkout is `acent-labs/acent-ops`. The configured upstream remote is `paperclipai/paperclip`.
+Assume fork-specific patches may exist even when older docs, screenshots, or branches say otherwise.
 
-### Branch Strategy
+Important current facts from this repo:
 
-- `feat/externalize-hermes-adapter` → core has **no** `hermes-paperclip-adapter` dependency and **no** built-in `hermes_local` registration. Install Hermes via the Adapter Plugin manager (`@henkey/hermes-paperclip-adapter` or a `file:` path).
-- Older fork branches may still document built-in Hermes; treat this file as authoritative for the externalize branch.
+- `hermes_local` is currently a built-in adapter in both server and UI code. Do not assume an external-only Hermes model.
+- External adapter packages are still supported via `~/.paperclip/adapter-plugins.json`.
+- Built-in adapter types currently include `claude_local`, `codex_local`, `cursor`, `gemini_local`, `hermes_local`, `opencode_local`, `pi_local`, `openclaw_gateway`, `process`, and `http`.
+- When changing adapter plumbing, preserve optional adapter fields such as `detectModel`.
 
-### Hermes (plugin only)
-
-- Register through **Board → Adapter manager** (same as Droid). Type remains `hermes_local` once the package is loaded.
-- UI uses generic **config-schema** + **ui-parser.js** from the package — no Hermes imports in `server/` or `ui/` source.
-- Optional: `file:` entry in `~/.paperclip/adapter-plugins.json` for local dev of the adapter repo.
-
-### Local Dev
-
-- Fork runs on port 3101+ (auto-detects if 3100 is taken by upstream instance)
-- `npx vite build` hangs on NTFS — use `node node_modules/vite/bin/vite.js build` instead
-- Server startup from NTFS takes 30-60s — don't assume failure immediately
-- Kill ALL paperclip processes before starting: `pkill -f "paperclip"; pkill -f "tsx.*index.ts"`
-- Vite cache survives `rm -rf dist` — delete both: `rm -rf ui/dist ui/node_modules/.vite`
-
-### Fork QoL Patches (not in upstream)
-
-These are local modifications in the fork's UI. If re-copying source, these must be re-applied:
-
-1. **stderr_group** — amber accordion for MCP init noise in `RunTranscriptView.tsx`
-2. **tool_group** — accordion for consecutive non-terminal tools (write, read, search, browser)
-3. **Dashboard excerpt** — `LatestRunCard` strips markdown, shows first 3 lines/280 chars
-
-### Plugin System
-
-PR #2218 (`feat/external-adapter-phase1`) adds external adapter support. See root `AGENTS.md` for full details.
-
-- Adapters can be loaded as external plugins via `~/.paperclip/adapter-plugins.json`
-- The plugin-loader should have ZERO hardcoded adapter imports — pure dynamic loading
-- `createServerAdapter()` must include ALL optional fields (especially `detectModel`)
-- Built-in UI adapters can shadow external plugin parsers — remove built-in when fully externalizing
-- Reference external adapters: Hermes (`@henkey/hermes-paperclip-adapter` or `file:`) and Droid (npm)
+If you are reconciling upstream or another fork with this checkout, trust the current code and current remotes over stale branch-specific notes.
