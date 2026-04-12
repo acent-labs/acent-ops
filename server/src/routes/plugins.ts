@@ -517,7 +517,12 @@ export function pluginRoutes(
    * - 502 if the plugin worker is unavailable or the RPC call fails
    */
   router.post("/plugins/tools/execute", async (req, res) => {
-    assertBoard(req);
+    // Allow both board and agent actors — agents need plugin tools during heartbeats.
+    // Company-scoped access is enforced below via assertCompanyAccess(req, runContext.companyId).
+    if (req.actor.type === "none") {
+      res.status(401).json({ error: "Authentication required" });
+      return;
+    }
 
     if (!toolDeps) {
       res.status(501).json({ error: "Plugin tool dispatch is not enabled" });
