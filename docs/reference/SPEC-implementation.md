@@ -42,7 +42,7 @@ These decisions close open questions from `SPEC.md` for V1.
 | Auth | Mode-dependent human auth (`local_trusted` implicit board in current code; authenticated mode uses sessions), API keys for agents |
 | Budget period | Monthly UTC calendar window |
 | Budget enforcement | Soft alerts + hard limit auto-pause |
-| Deployment modes | Canonical model is `local_trusted` + `authenticated` with `private/public` exposure policy (see `doc/DEPLOYMENT-MODES.md`) |
+| Deployment modes | Canonical model is `local_trusted` + `authenticated` with `private/public` exposure policy (see `docs/reference/DEPLOYMENT-MODES.md`) |
 
 ## 4. Current Baseline (Repo Snapshot)
 

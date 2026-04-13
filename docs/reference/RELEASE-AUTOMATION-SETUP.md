@@ -178,8 +178,8 @@ These files should always trigger code owner review:
 - `scripts/release-package-map.mjs`
 - `scripts/create-github-release.sh`
 - `scripts/rollback-latest.sh`
-- `doc/RELEASING.md`
-- `doc/PUBLISHING.md`
+- `docs/reference/RELEASING.md`
+- `docs/reference/PUBLISHING.md`
 
 If you want stronger controls, add a repository ruleset that explicitly blocks direct pushes to:
 
@@ -277,6 +277,6 @@ Check:
 
 ## Related Docs
 
-- [doc/RELEASING.md](RELEASING.md)
-- [doc/PUBLISHING.md](PUBLISHING.md)
-- [doc/plans/2026-03-17-release-automation-and-versioning.md](plans/2026-03-17-release-automation-and-versioning.md)
+- [docs/reference/RELEASING.md](RELEASING.md)
+- [docs/reference/PUBLISHING.md](PUBLISHING.md)
+- [docs/reference/plans/2026-03-17-release-automation-and-versioning.md](plans/2026-03-17-release-automation-and-versioning.md)

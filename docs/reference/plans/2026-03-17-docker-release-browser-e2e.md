@@ -295,8 +295,8 @@ Files:
 
 - `scripts/docker-onboard-smoke.sh`
 - optionally `scripts/lib/docker-onboard-smoke.sh` or similar helper
-- `doc/DOCKER.md`
-- `doc/RELEASING.md`
+- `docs/reference/DOCKER.md`
+- `docs/reference/RELEASING.md`
 
 Tasks:
 
@@ -354,7 +354,7 @@ Acceptance:
 Files:
 
 - `.github/workflows/release.yml`
-- `doc/RELEASING.md`
+- `docs/reference/RELEASING.md`
 
 Tasks:
 

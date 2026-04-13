@@ -5,9 +5,9 @@ const manifest: PaperclipPluginManifestV1 = {
   id: PLUGIN_ID,
   apiVersion: 1,
   version: PLUGIN_VERSION,
-  displayName: "LinkedIn Reader",
+  displayName: "LinkedIn Connector",
   description:
-    "Read-only social media analytics for LinkedIn. Agents can check profiles, posts, and organization pages without posting anything. Uses OAuth 2.0 for authentication.",
+    "LinkedIn social connector with OAuth 2.0. Agents can check profiles, create/delete posts, and view reactions. Uses the 'Share on LinkedIn' product API.",
   author: "Acent Labs",
   categories: ["connector", "automation"],
   capabilities: [
@@ -86,62 +86,63 @@ const manifest: PaperclipPluginManifestV1 = {
       name: TOOL_NAMES.linkedinGetMe,
       displayName: "LinkedIn Get My Profile",
       description:
-        "Get the authenticated LinkedIn user profile including name, email, and profile picture.",
+        "Get the authenticated LinkedIn user profile including name, email, and profile picture via OpenID userinfo.",
       parametersSchema: {
         type: "object",
         properties: {},
       },
     },
     {
-      name: TOOL_NAMES.linkedinGetPosts,
-      displayName: "LinkedIn Get Posts",
+      name: TOOL_NAMES.linkedinCreatePost,
+      displayName: "LinkedIn Create Post",
       description:
-        "Get recent posts by the authenticated user or a specific author. Returns posts with engagement data.",
+        "Create a new text post on LinkedIn as the authenticated user. Returns the created post info.",
       parametersSchema: {
         type: "object",
         properties: {
-          authorUrn: {
+          text: {
             type: "string",
-            description: "LinkedIn person URN (e.g. urn:li:person:xxx). Omit to get your own posts.",
+            description: "The text content of the post. Required.",
           },
-          count: {
-            type: "number",
-            description: "Number of posts to return (1-100). Default: 10.",
+          visibility: {
+            type: "string",
+            enum: ["PUBLIC", "CONNECTIONS"],
+            description: "Post visibility. Default: PUBLIC.",
           },
         },
+        required: ["text"],
       },
     },
     {
-      name: TOOL_NAMES.linkedinGetOrganization,
-      displayName: "LinkedIn Get Organization",
+      name: TOOL_NAMES.linkedinDeletePost,
+      displayName: "LinkedIn Delete Post",
       description:
-        "Get a LinkedIn organization (company page) profile by ID. Returns basic organization info.",
+        "Delete a LinkedIn post by its URN.",
       parametersSchema: {
         type: "object",
         properties: {
-          orgId: {
+          postUrn: {
             type: "string",
-            description: "LinkedIn organization ID. Required.",
+            description: "The post URN to delete (e.g. urn:li:share:1234567890). Required.",
           },
         },
-        required: ["orgId"],
+        required: ["postUrn"],
       },
     },
     {
-      name: TOOL_NAMES.linkedinGetPostAnalytics,
-      displayName: "LinkedIn Get Post Analytics",
+      name: TOOL_NAMES.linkedinGetReactions,
+      displayName: "LinkedIn Get Reactions",
       description:
-        "Get social engagement analytics (likes, comments, shares) for specific LinkedIn posts by URN.",
+        "Get reactions (likes, celebrates, etc.) for a specific LinkedIn post by URN.",
       parametersSchema: {
         type: "object",
         properties: {
-          postUrns: {
-            type: "array",
-            items: { type: "string" },
-            description: "Array of post URNs to get analytics for (max 10).",
+          entityUrn: {
+            type: "string",
+            description: "The entity URN to get reactions for (e.g. urn:li:share:1234567890). Required.",
           },
         },
-        required: ["postUrns"],
+        required: ["entityUrn"],
       },
     },
   ],

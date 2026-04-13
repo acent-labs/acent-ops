@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="doc/assets/header.png" alt="Paperclip — runs your business" width="720" />
+  <img src="docs/reference/assets/header.png" alt="Paperclip — runs your business" width="720" />
 </p>
 
 <p align="center">
@@ -62,11 +62,11 @@ This repository contains the full product surface:
 
 If you are trying to understand the product or contribute changes, read these in order:
 
-1. `doc/GOAL.md`
-2. `doc/PRODUCT.md`
-3. `doc/SPEC-implementation.md`
-4. `doc/DEVELOPING.md`
-5. `doc/DATABASE.md`
+1. `docs/reference/GOAL.md`
+2. `docs/reference/PRODUCT.md`
+3. `docs/reference/SPEC-implementation.md`
+4. `docs/reference/DEVELOPING.md`
+5. `docs/reference/DATABASE.md`
 
 <br/>
 
@@ -74,12 +74,12 @@ If you are trying to understand the product or contribute changes, read these in
 <table>
   <tr>
     <td align="center"><strong>Works<br/>with</strong></td>
-    <td align="center"><img src="doc/assets/logos/openclaw.svg" width="32" alt="OpenClaw" /><br/><sub>OpenClaw</sub></td>
-    <td align="center"><img src="doc/assets/logos/claude.svg" width="32" alt="Claude" /><br/><sub>Claude Code</sub></td>
-    <td align="center"><img src="doc/assets/logos/codex.svg" width="32" alt="Codex" /><br/><sub>Codex</sub></td>
-    <td align="center"><img src="doc/assets/logos/cursor.svg" width="32" alt="Cursor" /><br/><sub>Cursor</sub></td>
-    <td align="center"><img src="doc/assets/logos/bash.svg" width="32" alt="Bash" /><br/><sub>Bash</sub></td>
-    <td align="center"><img src="doc/assets/logos/http.svg" width="32" alt="HTTP" /><br/><sub>HTTP</sub></td>
+    <td align="center"><img src="docs/reference/assets/logos/openclaw.svg" width="32" alt="OpenClaw" /><br/><sub>OpenClaw</sub></td>
+    <td align="center"><img src="docs/reference/assets/logos/claude.svg" width="32" alt="Claude" /><br/><sub>Claude Code</sub></td>
+    <td align="center"><img src="docs/reference/assets/logos/codex.svg" width="32" alt="Codex" /><br/><sub>Codex</sub></td>
+    <td align="center"><img src="docs/reference/assets/logos/cursor.svg" width="32" alt="Cursor" /><br/><sub>Cursor</sub></td>
+    <td align="center"><img src="docs/reference/assets/logos/bash.svg" width="32" alt="Bash" /><br/><sub>Bash</sub></td>
+    <td align="center"><img src="docs/reference/assets/logos/http.svg" width="32" alt="HTTP" /><br/><sub>HTTP</sub></td>
   </tr>
 </table>
 
@@ -264,7 +264,7 @@ pnpm db:generate      # Generate DB migration
 pnpm db:migrate       # Apply migrations
 ```
 
-See [doc/DEVELOPING.md](doc/DEVELOPING.md) for the full development guide.
+See [docs/reference/DEVELOPING.md](docs/reference/DEVELOPING.md) for the full development guide.
 
 <br/>
 
@@ -331,7 +331,7 @@ MIT &copy; 2026 Paperclip
 ---
 
 <p align="center">
-  <img src="doc/assets/footer.jpg" alt="" width="720" />
+  <img src="docs/reference/assets/footer.jpg" alt="" width="720" />
 </p>
 
 <p align="center">

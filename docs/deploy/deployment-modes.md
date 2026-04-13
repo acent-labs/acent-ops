@@ -5,6 +5,8 @@ summary: local_trusted vs authenticated (private/public)
 
 Paperclip supports two runtime modes with different security profiles.
 
+For deeper maintainer details, see `docs/reference/DEPLOYMENT-MODES.md`.
+
 ## `local_trusted`
 
 The default mode. Optimized for single-operator local use.
