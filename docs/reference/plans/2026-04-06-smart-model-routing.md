@@ -4,9 +4,9 @@ Status: Proposed
 Date: 2026-04-06
 Audience: Product and engineering
 Related:
-- `doc/SPEC-implementation.md`
-- `doc/PRODUCT.md`
-- `doc/plans/2026-03-14-adapter-skill-sync-rollout.md`
+- `docs/reference/SPEC-implementation.md`
+- `docs/reference/PRODUCT.md`
+- `docs/reference/plans/2026-03-14-adapter-skill-sync-rollout.md`
 
 ## 1. Purpose
 

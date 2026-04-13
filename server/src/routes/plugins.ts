@@ -14,7 +14,7 @@
  * All routes require board-level authentication (assertBoard middleware).
  *
  * @module server/routes/plugins
- * @see doc/plugins/PLUGIN_SPEC.md for the full plugin specification
+ * @see docs/reference/plugins/PLUGIN_SPEC.md for the full plugin specification
  */
 
 import { existsSync } from "node:fs";

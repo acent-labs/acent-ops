@@ -1,4 +1,4 @@
-import { LINKEDIN_AUTH_BASE, LINKEDIN_API_BASE } from "./constants.js";
+import { LINKEDIN_AUTH_BASE, LINKEDIN_API_BASE, LINKEDIN_API_VERSION } from "./constants.js";
 
 export interface LinkedInCredentials {
   clientId: string;
@@ -118,7 +118,6 @@ export class LinkedInApiClient {
 
   isTokenExpired(): boolean {
     if (!this.tokens.expiresAt) return false;
-    // Consider expired 5 minutes before actual expiry
     return Date.now() > this.tokens.expiresAt - 5 * 60 * 1000;
   }
 
@@ -129,48 +128,11 @@ export class LinkedInApiClient {
     }
     const newTokens = await refreshAccessToken(this.creds, this.tokens.refreshToken);
     this.tokens = newTokens;
-    return true; // tokens were refreshed
+    return true;
   }
 
-  private async request<T = unknown>(
-    path: string,
-    options: {
-      base?: string;
-      params?: Record<string, string>;
-      headers?: Record<string, string>;
-      version?: string;
-    } = {},
-  ): Promise<T> {
-    await this.ensureValidToken();
-
-    const base = options.base ?? LINKEDIN_API_BASE;
-    const qs = options.params
-      ? "?" + new URLSearchParams(options.params).toString()
-      : "";
-    const url = `${base}${path}${qs}`;
-
-    const headers: Record<string, string> = {
-      Authorization: `Bearer ${this.tokens.accessToken}`,
-      "X-Restli-Protocol-Version": "2.0.0",
-      ...options.headers,
-    };
-
-    if (options.version) {
-      headers["LinkedIn-Version"] = options.version;
-    }
-
-    const response = await fetch(url, { method: "GET", headers });
-
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`LinkedIn API GET ${path} failed (${response.status}): ${body}`);
-    }
-
-    return (await response.json()) as T;
-  }
-
-  /** Resolve the authenticated user's person URN, caching after first call. */
-  private async resolvePersonUrn(): Promise<string> {
+  /** Resolve the authenticated user's person URN (sub claim), caching after first call. */
+  async resolvePersonUrn(): Promise<string> {
     if (this.cachedPersonUrn) return this.cachedPersonUrn;
     const me = await this.getMe();
     const data = me as { sub?: string };
@@ -179,67 +141,100 @@ export class LinkedInApiClient {
     return this.cachedPersonUrn;
   }
 
+  private async request<T = unknown>(
+    path: string,
+    options: {
+      method?: string;
+      params?: Record<string, string>;
+      headers?: Record<string, string>;
+      body?: unknown;
+      versioned?: boolean;
+    } = {},
+  ): Promise<T> {
+    await this.ensureValidToken();
+
+    const method = options.method ?? "GET";
+    const qs = options.params
+      ? "?" + new URLSearchParams(options.params).toString()
+      : "";
+    const url = `${LINKEDIN_API_BASE}${path}${qs}`;
+
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${this.tokens.accessToken}`,
+      "X-Restli-Protocol-Version": "2.0.0",
+      ...options.headers,
+    };
+
+    if (options.versioned !== false) {
+      headers["LinkedIn-Version"] = LINKEDIN_API_VERSION;
+    }
+
+    const fetchOpts: RequestInit = { method, headers };
+    if (options.body) {
+      headers["Content-Type"] = "application/json";
+      fetchOpts.body = JSON.stringify(options.body);
+    }
+
+    const response = await fetch(url, fetchOpts);
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`LinkedIn API ${method} ${path} failed (${response.status}): ${body}`);
+    }
+
+    const text = await response.text();
+    if (!text) return {} as T;
+    return JSON.parse(text) as T;
+  }
+
   // -- public API methods ---------------------------------------------------
 
+  /** Get authenticated user profile via OpenID userinfo endpoint. */
   async getMe(): Promise<unknown> {
-    return this.request("/v2/userinfo");
-  }
+    await this.ensureValidToken();
 
-  async getProfile(): Promise<unknown> {
-    return this.request("/v2/me", {
-      params: {
-        projection: "(id,localizedFirstName,localizedLastName,localizedHeadline,vanityName,profilePicture(displayImage~digitalmediaAsset:playableStreams))",
-      },
+    const response = await fetch(`${LINKEDIN_API_BASE}/v2/userinfo`, {
+      headers: { Authorization: `Bearer ${this.tokens.accessToken}` },
     });
-  }
 
-  async getPosts(authorUrn?: string, count = 10): Promise<unknown> {
-    const personUrn = authorUrn ?? await this.resolvePersonUrn();
-    const urn = personUrn.startsWith("urn:") ? personUrn : `urn:li:person:${personUrn}`;
-    return this.request("/rest/posts", {
-      params: {
-        author: urn,
-        q: "author",
-        count: String(Math.max(1, Math.min(count, 100))),
-        sortBy: "LAST_MODIFIED",
-      },
-      version: "202401",
-    });
-  }
-
-  async getOrganization(orgId: string): Promise<unknown> {
-    return this.request(`/rest/organizations/${orgId}`, {
-      version: "202401",
-    });
-  }
-
-  async getOrganizationPosts(orgUrn: string, count = 10): Promise<unknown> {
-    const urn = orgUrn.startsWith("urn:") ? orgUrn : `urn:li:organization:${orgUrn}`;
-    return this.request("/rest/posts", {
-      params: {
-        author: urn,
-        q: "author",
-        count: String(Math.max(1, Math.min(count, 100))),
-        sortBy: "LAST_MODIFIED",
-      },
-      version: "202401",
-    });
-  }
-
-  async getPostAnalytics(postUrns: string[]): Promise<unknown> {
-    // Social actions (likes, comments) for specific posts
-    const results: unknown[] = [];
-    for (const urn of postUrns.slice(0, 10)) {
-      try {
-        const encoded = encodeURIComponent(urn);
-        const data = await this.request(`/rest/socialMetadata/${encoded}`, {
-          version: "202401",
-        });
-        results.push({ urn, analytics: data });
-      } catch (err) {
-        results.push({ urn, error: String(err) });
-      }
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`LinkedIn userinfo failed (${response.status}): ${body}`);
     }
-    return results;
+    return response.json();
+  }
+
+  /** Create a text post on LinkedIn. */
+  async createPost(text: string, visibility: "PUBLIC" | "CONNECTIONS" = "PUBLIC"): Promise<unknown> {
+    const personUrn = await this.resolvePersonUrn();
+    return this.request("/rest/posts", {
+      method: "POST",
+      body: {
+        author: `urn:li:person:${personUrn}`,
+        commentary: text,
+        visibility,
+        distribution: {
+          feedDistribution: "MAIN_FEED",
+          targetEntities: [],
+          thirdPartyDistributionChannels: [],
+        },
+        lifecycleState: "PUBLISHED",
+        isReshareDisabledByAuthor: false,
+      },
+    });
+  }
+
+  /** Delete a post by URN. */
+  async deletePost(postUrn: string): Promise<void> {
+    const encoded = encodeURIComponent(postUrn);
+    await this.request(`/rest/posts/${encoded}`, { method: "DELETE" });
+  }
+
+  /** Get reactions for a specific entity (post URN). */
+  async getReactions(entityUrn: string): Promise<unknown> {
+    const encoded = encodeURIComponent(entityUrn);
+    return this.request(`/rest/reactions/${encoded}`, {
+      params: { q: "entity" },
+    });
   }
 }

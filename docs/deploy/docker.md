@@ -5,6 +5,8 @@ summary: Docker Compose quickstart
 
 Run Paperclip in Docker without installing Node or pnpm locally.
 
+For deeper maintainer details, see `docs/reference/DOCKER.md`.
+
 ## Compose Quickstart (Recommended)
 
 ```sh

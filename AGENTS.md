@@ -6,7 +6,7 @@ Guidance for human and AI contributors working in this repository.
 
 Paperclip is a control plane for autonomous AI companies.
 This repository is the product itself: board UI, REST API/orchestration layer, database schema, built-in adapters, plugin infrastructure, CLI, and local-dev tooling.
-The current implementation target is V1 and is defined in `doc/SPEC-implementation.md`.
+The current implementation target is V1 and is defined in `docs/reference/SPEC-implementation.md`.
 
 ## 2. Product Model In 60 Seconds
 
@@ -23,14 +23,14 @@ Keep this mental model in mind before touching code:
 
 Before making changes, read in this order:
 
-1. `doc/GOAL.md`
-2. `doc/PRODUCT.md`
-3. `doc/SPEC-implementation.md`
-4. `doc/DEVELOPING.md`
-5. `doc/DATABASE.md`
+1. `docs/reference/GOAL.md`
+2. `docs/reference/PRODUCT.md`
+3. `docs/reference/SPEC-implementation.md`
+4. `docs/reference/DEVELOPING.md`
+5. `docs/reference/DATABASE.md`
 
-`doc/SPEC.md` is long-horizon product context.
-`doc/SPEC-implementation.md` is the concrete V1 build contract.
+`docs/reference/SPEC.md` is long-horizon product context.
+`docs/reference/SPEC-implementation.md` is the concrete V1 build contract.
 
 ## 4. What Exists In This Repo Today
 
@@ -51,7 +51,7 @@ Current top-level product surface in code:
 - `packages/adapters/`: agent adapter implementations (Claude, Codex, Cursor, etc.)
 - `packages/adapter-utils/`: shared adapter utilities
 - `packages/plugins/`: plugin system packages
-- `doc/`: operational and product docs
+- `docs/reference/`: operational and product docs
 
 ## 6. Dev Setup (Auto DB)
 
@@ -103,10 +103,10 @@ If you change schema/API behavior, update all impacted layers:
 - Activity logging for mutating actions
 
 4. Do not replace strategic docs wholesale unless asked.
-Prefer additive updates. Keep `doc/SPEC.md` and `doc/SPEC-implementation.md` aligned.
+Prefer additive updates. Keep `docs/reference/SPEC.md` and `docs/reference/SPEC-implementation.md` aligned.
 
 5. Keep repo plan docs dated and centralized.
-When you are creating a plan file in the repository itself, new plan documents belong in `doc/plans/` and should use `YYYY-MM-DD-slug.md` filenames. This does not replace Paperclip issue planning: if a Paperclip issue asks for a plan, update the issue `plan` document per the `paperclip` skill instead of creating a repo markdown file.
+When you are creating a plan file in the repository itself, new plan documents belong in `docs/reference/plans/` and should use `YYYY-MM-DD-slug.md` filenames. This does not replace Paperclip issue planning: if a Paperclip issue asks for a plan, update the issue `plan` document per the `paperclip` skill instead of creating a repo markdown file.
 
 ## 8. Database Change Workflow
 
@@ -177,7 +177,7 @@ When creating a pull request (via `gh pr create` or any other method), you **mus
 
 A change is done when all are true:
 
-1. Behavior matches `doc/SPEC-implementation.md`
+1. Behavior matches `docs/reference/SPEC-implementation.md`
 2. Typecheck, tests, and build pass
 3. Contracts are synced across db/shared/server/ui
 4. Docs updated when behavior or commands change

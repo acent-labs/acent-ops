@@ -25,6 +25,13 @@
         "tab": "Get Started",
         "groups": [
           {
+            "group": "Documentation Map",
+            "pages": [
+              "README",
+              "reference/README"
+            ]
+          },
+          {
             "group": "Introduction",
             "pages": [
               "start/what-is-paperclip",
@@ -135,6 +142,36 @@
               "cli/overview",
               "cli/setup-commands",
               "cli/control-plane-commands"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "Core References",
+            "pages": [
+              "reference/GOAL",
+              "reference/PRODUCT",
+              "reference/SPEC-implementation",
+              "reference/SPEC",
+              "reference/DEVELOPING",
+              "reference/DATABASE",
+              "reference/DEPLOYMENT-MODES",
+              "reference/DOCKER",
+              "reference/CLI"
+            ]
+          },
+          {
+            "group": "Deep Technical",
+            "pages": [
+              "reference/spec/agents-runtime",
+              "reference/spec/agent-runs",
+              "reference/spec/ui",
+              "reference/plugins/PLUGIN_AUTHORING_GUIDE",
+              "reference/plugins/PLUGIN_SPEC",
+              "reference/plugins/ideas-from-opencode"
             ]
           }
         ]

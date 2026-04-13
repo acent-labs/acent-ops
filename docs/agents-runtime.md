@@ -4,6 +4,8 @@ Status: User-facing guide
 Last updated: 2026-03-26
 Audience: Operators setting up and running agents in Paperclip
 
+For deeper maintainer/runtime internals, see `docs/reference/spec/agents-runtime.md` and `docs/reference/spec/agent-runs.md`.
+
 ## 1. What this system does
 
 Agents in Paperclip do not run continuously.  

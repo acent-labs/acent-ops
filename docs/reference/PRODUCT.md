@@ -89,7 +89,7 @@ There are two runtime modes Paperclip must support:
 - `local_trusted` (default): single-user local trusted deployment with no login friction
 - `authenticated`: login-required mode that supports both private-network and public deployment exposure policies
 
-Canonical mode design and command expectations live in `doc/DEPLOYMENT-MODES.md`.
+Canonical mode design and command expectations live in `docs/reference/DEPLOYMENT-MODES.md`.
 
 ## Further Detail
 

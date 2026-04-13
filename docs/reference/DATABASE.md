@@ -29,7 +29,7 @@ When `DATABASE_URL` is unset, this command targets the current embedded PostgreS
 
 This mode is ideal for local development and one-command installs.
 
-Docker note: the Docker quickstart image also uses embedded PostgreSQL by default. Persist `/paperclip` to keep DB state across container restarts (see `doc/DOCKER.md`).
+Docker note: the Docker quickstart image also uses embedded PostgreSQL by default. Persist `/paperclip` to keep DB state across container restarts (see `docs/reference/DOCKER.md`).
 
 ## 2. Local PostgreSQL (Docker)
 

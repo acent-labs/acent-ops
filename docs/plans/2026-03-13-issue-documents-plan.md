@@ -482,7 +482,7 @@ Files:
 
 - `skills/paperclip/SKILL.md`
 - `docs/api/issues.md`
-- `doc/SPEC-implementation.md`
+- `docs/reference/SPEC-implementation.md`
 - relevant plan/docs that mention `<plan>`
 
 Acceptance:

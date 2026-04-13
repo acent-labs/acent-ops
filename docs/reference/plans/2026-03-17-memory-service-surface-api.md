@@ -10,11 +10,11 @@ Define a Paperclip memory service and surface API that can sit above multiple me
 - budget / cost visibility
 - plugin-first extensibility
 
-This plan is based on the external landscape summarized in `doc/memory-landscape.md` and on the current Paperclip architecture in:
+This plan is based on the external landscape summarized in `docs/reference/memory-landscape.md` and on the current Paperclip architecture in:
 
-- `doc/SPEC-implementation.md`
-- `doc/plugins/PLUGIN_SPEC.md`
-- `doc/plugins/PLUGIN_AUTHORING_GUIDE.md`
+- `docs/reference/SPEC-implementation.md`
+- `docs/reference/plugins/PLUGIN_SPEC.md`
+- `docs/reference/plugins/PLUGIN_AUTHORING_GUIDE.md`
 - `packages/plugins/sdk/src/types.ts`
 
 ## Recommendation In One Sentence

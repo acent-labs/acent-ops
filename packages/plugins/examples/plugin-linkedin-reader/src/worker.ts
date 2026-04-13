@@ -20,7 +20,7 @@ import {
 // Config
 // ---------------------------------------------------------------------------
 
-type LinkedInReaderConfig = {
+type LinkedInConfig = {
   clientIdRef?: string;
   clientSecretRef?: string;
   accessTokenRef?: string;
@@ -71,9 +71,9 @@ async function resolveOptionalValue(
 }
 
 async function resolveCredentials(ctx: PluginContext): Promise<LinkedInCredentials> {
-  const config: LinkedInReaderConfig = {
+  const config: LinkedInConfig = {
     ...DEFAULT_CONFIG,
-    ...((await ctx.config.get()) as LinkedInReaderConfig),
+    ...((await ctx.config.get()) as LinkedInConfig),
   };
   return {
     clientId: await resolveValue(ctx, config.clientIdRef, "LINKEDIN_CONSUMER_KEY"),
@@ -83,9 +83,9 @@ async function resolveCredentials(ctx: PluginContext): Promise<LinkedInCredentia
 }
 
 async function resolveTokens(ctx: PluginContext): Promise<LinkedInTokens | null> {
-  const config: LinkedInReaderConfig = {
+  const config: LinkedInConfig = {
     ...DEFAULT_CONFIG,
-    ...((await ctx.config.get()) as LinkedInReaderConfig),
+    ...((await ctx.config.get()) as LinkedInConfig),
   };
 
   // First, try to load tokens from plugin state (stored by auth flow)
@@ -154,7 +154,7 @@ async function registerTools(ctx: PluginContext): Promise<void> {
       const url = buildAuthorizationUrl(creds, state);
       return {
         content: JSON.stringify({
-          message: "Visit the following URL to authorize LinkedIn access. After authorizing, you will be redirected to the callback URL with an authorization code. Provide that code to the linkedin-auth-callback tool.",
+          message: "Visit the following URL to authorize LinkedIn access. After authorizing, you will be redirected with an authorization code. Provide that code to the linkedin-auth-callback tool.",
           authorizationUrl: url,
           redirectUri: creds.redirectUri,
         }, null, 2),
@@ -171,9 +171,7 @@ async function registerTools(ctx: PluginContext): Promise<void> {
       description: "Exchange an authorization code for LinkedIn access tokens.",
       parametersSchema: {
         type: "object",
-        properties: {
-          code: { type: "string" },
-        },
+        properties: { code: { type: "string" } },
         required: ["code"],
       },
     },
@@ -188,21 +186,17 @@ async function registerTools(ctx: PluginContext): Promise<void> {
         tokens,
       );
 
-      // Reset client so it picks up new tokens
       linkedInClient = null;
 
       return {
         content: JSON.stringify({
-          message: "LinkedIn authorization successful! Access token stored. You can now use other LinkedIn tools.",
+          message: "LinkedIn authorization successful! Access token stored.",
           hasRefreshToken: !!tokens.refreshToken,
           expiresAt: tokens.expiresAt
             ? new Date(tokens.expiresAt).toISOString()
             : "unknown",
         }, null, 2),
-        data: {
-          success: true,
-          hasRefreshToken: !!tokens.refreshToken,
-        },
+        data: { success: true, hasRefreshToken: !!tokens.refreshToken },
       };
     },
   );
@@ -212,87 +206,87 @@ async function registerTools(ctx: PluginContext): Promise<void> {
     TOOL_NAMES.linkedinGetMe,
     {
       displayName: "LinkedIn Get My Profile",
-      description: "Get the authenticated LinkedIn user profile.",
+      description: "Get the authenticated LinkedIn user profile via OpenID userinfo.",
       parametersSchema: { type: "object", properties: {} },
     },
     async (): Promise<ToolResult> => {
       const client = await getClient(ctx);
-      const userinfo = await client.getMe();
-      const profile = await client.getProfile();
-      const result = { userinfo, profile };
+      const result = await client.getMe();
       return { content: JSON.stringify(result, null, 2), data: result };
     },
   );
 
-  // 4. linkedin-get-posts
+  // 4. linkedin-create-post
   ctx.tools.register(
-    TOOL_NAMES.linkedinGetPosts,
+    TOOL_NAMES.linkedinCreatePost,
     {
-      displayName: "LinkedIn Get Posts",
-      description: "Get recent posts with engagement data.",
+      displayName: "LinkedIn Create Post",
+      description: "Create a new text post on LinkedIn.",
       parametersSchema: {
         type: "object",
         properties: {
-          authorUrn: { type: "string" },
-          count: { type: "number" },
+          text: { type: "string" },
+          visibility: { type: "string", enum: ["PUBLIC", "CONNECTIONS"] },
         },
+        required: ["text"],
       },
     },
     async (params): Promise<ToolResult> => {
-      const { authorUrn, count } = params as { authorUrn?: string; count?: number };
+      const { text, visibility } = params as { text: string; visibility?: "PUBLIC" | "CONNECTIONS" };
+      if (!text) return { error: "text is required" };
       const client = await getClient(ctx);
-      const result = await client.getPosts(authorUrn, count);
-      return { content: JSON.stringify(result, null, 2), data: result };
+      const result = await client.createPost(text, visibility ?? "PUBLIC");
+      return {
+        content: JSON.stringify({
+          message: "Post created successfully on LinkedIn.",
+          ...result as object,
+        }, null, 2),
+        data: result,
+      };
     },
   );
 
-  // 5. linkedin-get-organization
+  // 5. linkedin-delete-post
   ctx.tools.register(
-    TOOL_NAMES.linkedinGetOrganization,
+    TOOL_NAMES.linkedinDeletePost,
     {
-      displayName: "LinkedIn Get Organization",
-      description: "Get a LinkedIn organization (company page) profile.",
+      displayName: "LinkedIn Delete Post",
+      description: "Delete a LinkedIn post by URN.",
       parametersSchema: {
         type: "object",
-        properties: {
-          orgId: { type: "string" },
-        },
-        required: ["orgId"],
+        properties: { postUrn: { type: "string" } },
+        required: ["postUrn"],
       },
     },
     async (params): Promise<ToolResult> => {
-      const { orgId } = params as { orgId: string };
-      if (!orgId) return { error: "orgId is required" };
+      const { postUrn } = params as { postUrn: string };
+      if (!postUrn) return { error: "postUrn is required" };
       const client = await getClient(ctx);
-      const org = await client.getOrganization(orgId);
-      const posts = await client.getOrganizationPosts(orgId);
-      const result = { organization: org, recentPosts: posts };
-      return { content: JSON.stringify(result, null, 2), data: result };
+      await client.deletePost(postUrn);
+      return {
+        content: JSON.stringify({ message: "Post deleted successfully.", postUrn }, null, 2),
+        data: { success: true, postUrn },
+      };
     },
   );
 
-  // 6. linkedin-get-post-analytics
+  // 6. linkedin-get-reactions
   ctx.tools.register(
-    TOOL_NAMES.linkedinGetPostAnalytics,
+    TOOL_NAMES.linkedinGetReactions,
     {
-      displayName: "LinkedIn Get Post Analytics",
-      description: "Get engagement analytics for specific LinkedIn posts.",
+      displayName: "LinkedIn Get Reactions",
+      description: "Get reactions for a specific LinkedIn post.",
       parametersSchema: {
         type: "object",
-        properties: {
-          postUrns: {
-            type: "array",
-            items: { type: "string" },
-          },
-        },
-        required: ["postUrns"],
+        properties: { entityUrn: { type: "string" } },
+        required: ["entityUrn"],
       },
     },
     async (params): Promise<ToolResult> => {
-      const { postUrns } = params as { postUrns: string[] };
-      if (!postUrns?.length) return { error: "postUrns array is required" };
+      const { entityUrn } = params as { entityUrn: string };
+      if (!entityUrn) return { error: "entityUrn is required" };
       const client = await getClient(ctx);
-      const result = await client.getPostAnalytics(postUrns);
+      const result = await client.getReactions(entityUrn);
       return { content: JSON.stringify(result, null, 2), data: result };
     },
   );
@@ -315,7 +309,7 @@ const plugin: PaperclipPlugin = definePlugin({
     return {
       status: hasAccessToken ? "ok" : hasEnvCreds ? "degraded" : "degraded",
       message: hasAccessToken
-        ? "LinkedIn Reader plugin ready"
+        ? "LinkedIn Connector plugin ready"
         : hasEnvCreds
           ? "LinkedIn credentials found but not yet authorized — run linkedin-auth-start"
           : "LinkedIn credentials not configured — set env vars or plugin secret refs",
