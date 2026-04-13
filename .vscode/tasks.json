@@ -1,0 +1,19 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Dev",
+      "type": "shell",
+      "command": "pnpm dev",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "group": "dev",
+        "panel": "dedicated",
+        "reveal": "always",
+        "focus": false,
+        "showReuseMessage": false
+      }
+    }
+  ]
+}
