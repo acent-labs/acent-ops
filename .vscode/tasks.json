@@ -2,6 +2,19 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "Dev: Stop",
+      "type": "shell",
+      "command": "pnpm dev:stop",
+      "problemMatcher": [],
+      "presentation": {
+        "group": "dev",
+        "panel": "dedicated",
+        "reveal": "always",
+        "focus": false,
+        "showReuseMessage": false
+      }
+    },
+    {
       "label": "Dev",
       "type": "shell",
       "command": "pnpm dev",
