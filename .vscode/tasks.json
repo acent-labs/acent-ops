@@ -15,7 +15,7 @@
       }
     },
     {
-      "label": "Dev",
+      "label": "Dev: Run",
       "type": "shell",
       "command": "pnpm dev",
       "isBackground": true,
@@ -27,6 +27,15 @@
         "focus": false,
         "showReuseMessage": false
       }
+    },
+    {
+      "label": "Dev",
+      "dependsOn": ["Dev: Stop", "Dev: Run"],
+      "dependsOrder": "sequence",
+      "runOptions": {
+        "runOn": "folderOpen"
+      },
+      "problemMatcher": []
     }
   ]
 }
