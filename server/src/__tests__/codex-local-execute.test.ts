@@ -261,6 +261,74 @@ describe("codex execute", () => {
     }
   });
 
+  it("writes a Paperclip runtime fallback file and references it in the prompt", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-runtime-fallback-"));
+    const workspace = path.join(root, "workspace");
+    const commandPath = path.join(root, "codex");
+    const capturePath = path.join(root, "capture.json");
+    const runtimeFilePath = path.join(workspace, ".paperclip-runtime.json");
+    await fs.mkdir(workspace, { recursive: true });
+    await writeFakeCodexCommand(commandPath);
+
+    const previousHome = process.env.HOME;
+    process.env.HOME = root;
+
+    try {
+      const result = await execute({
+        runId: "run-runtime-fallback",
+        agent: {
+          id: "agent-1",
+          companyId: "company-1",
+          name: "Codex Coder",
+          adapterType: "codex_local",
+          adapterConfig: {},
+        },
+        runtime: {
+          sessionId: null,
+          sessionParams: null,
+          sessionDisplayId: null,
+          taskKey: null,
+        },
+        config: {
+          command: commandPath,
+          cwd: workspace,
+          env: {
+            PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
+          },
+          promptTemplate: "Follow the paperclip heartbeat.",
+        },
+        context: {
+          taskId: "issue-1",
+          wakeReason: "issue_assigned",
+        },
+        authToken: "run-jwt-token",
+        onLog: async () => {},
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.errorMessage).toBeNull();
+
+      const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as CapturePayload;
+      expect(capture.prompt).toContain("## Paperclip Runtime Fallback");
+      expect(capture.prompt).toContain(runtimeFilePath);
+
+      const runtimeFallback = JSON.parse(await fs.readFile(runtimeFilePath, "utf8")) as Record<string, string>;
+      expect(runtimeFallback).toMatchObject({
+        apiBase: "http://localhost:3100",
+        apiKey: "run-jwt-token",
+        companyId: "company-1",
+        agentId: "agent-1",
+        runId: "run-runtime-fallback",
+        taskId: "issue-1",
+        wakeReason: "issue_assigned",
+      });
+    } finally {
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("injects structured Paperclip wake payloads into env and prompt", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-wake-"));
     const workspace = path.join(root, "workspace");

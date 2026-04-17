@@ -142,6 +142,26 @@ function resolveCodexSkillsDir(codexHome: string): string {
   return path.join(codexHome, "skills");
 }
 
+function resolvePaperclipRuntimeFallbackPath(cwd: string): string {
+  return path.join(cwd, ".paperclip-runtime.json");
+}
+
+async function writePaperclipRuntimeFallbackFile(
+  filePath: string,
+  env: Record<string, string>,
+) {
+  const payload = {
+    apiBase: env.PAPERCLIP_API_URL ?? null,
+    apiKey: env.PAPERCLIP_API_KEY ?? null,
+    companyId: env.PAPERCLIP_COMPANY_ID ?? null,
+    agentId: env.PAPERCLIP_AGENT_ID ?? null,
+    runId: env.PAPERCLIP_RUN_ID ?? null,
+    taskId: env.PAPERCLIP_TASK_ID ?? null,
+    wakeReason: env.PAPERCLIP_WAKE_REASON ?? null,
+  };
+  await fs.writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 });
+}
+
 type EnsureCodexSkillsInjectedOptions = {
   skillsHome?: string;
   skillsEntries?: Array<{ key: string; runtimeName: string; source: string }>;
@@ -382,6 +402,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   if (!hasExplicitApiKey && authToken) {
     env.PAPERCLIP_API_KEY = authToken;
   }
+  const runtimeFallbackPath = resolvePaperclipRuntimeFallbackPath(cwd);
+  env.PAPERCLIP_RUNTIME_CONTEXT_FILE = runtimeFallbackPath;
+  await writePaperclipRuntimeFallbackFile(runtimeFallbackPath, env);
   const effectiveEnv = Object.fromEntries(
     Object.entries({ ...process.env, ...env }).filter(
       (entry): entry is [string, string] => typeof entry[1] === "string",
@@ -455,6 +478,12 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       ? renderTemplate(bootstrapPromptTemplate, templateData).trim()
       : "";
   const wakePrompt = renderPaperclipWakePrompt(context.paperclipWake, { resumedSession: Boolean(sessionId) });
+  const runtimeFallbackPrompt =
+    [
+      "## Paperclip Runtime Fallback",
+      `If Codex shell commands cannot see PAPERCLIP_* env vars, load the current heartbeat values from ${runtimeFallbackPath}.`,
+      "That JSON file contains apiBase, apiKey, companyId, agentId, runId, taskId, and wakeReason for this run.",
+    ].join("\n");
   const shouldUseResumeDeltaPrompt = Boolean(sessionId) && wakePrompt.length > 0;
   const promptInstructionsPrefix = shouldUseResumeDeltaPrompt ? "" : instructionsPrefix;
   instructionsChars = promptInstructionsPrefix.length;
@@ -486,6 +515,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const prompt = joinPromptSections([
     promptInstructionsPrefix,
     renderedBootstrapPrompt,
+    runtimeFallbackPrompt,
     wakePrompt,
     sessionHandoffNote,
     renderedPrompt,
