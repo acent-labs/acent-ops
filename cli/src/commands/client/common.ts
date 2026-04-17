@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import pc from "picocolors";
 import type { Command } from "commander";
 import { getStoredBoardCredential, loginBoardCli } from "../../client/board-auth.js";
@@ -42,22 +44,58 @@ export function addCommonClientOptions(command: Command, opts?: { includeCompany
   return command;
 }
 
+type RuntimeContextFile = {
+  apiBase?: string;
+  apiKey?: string;
+  companyId?: string;
+  runId?: string;
+};
+
+function readNonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function resolveRuntimeContextFilePath(): string {
+  const envPath = process.env.PAPERCLIP_RUNTIME_CONTEXT_FILE?.trim();
+  if (envPath) return path.resolve(envPath);
+  return path.resolve(process.cwd(), ".paperclip-runtime.json");
+}
+
+function readRuntimeContextFile(): RuntimeContextFile {
+  const filePath = resolveRuntimeContextFilePath();
+  if (!fs.existsSync(filePath)) return {};
+  try {
+    const raw = JSON.parse(fs.readFileSync(filePath, "utf8")) as Record<string, unknown> | null;
+    return {
+      apiBase: readNonEmptyString(raw?.apiBase),
+      apiKey: readNonEmptyString(raw?.apiKey),
+      companyId: readNonEmptyString(raw?.companyId),
+      runId: readNonEmptyString(raw?.runId),
+    };
+  } catch {
+    return {};
+  }
+}
+
 export function resolveCommandContext(
   options: BaseClientOptions,
   opts?: { requireCompany?: boolean },
 ): ResolvedClientContext {
   const context = readContext(options.context);
   const { name: profileName, profile } = resolveProfile(context, options.profile);
+  const runtimeContext = readRuntimeContextFile();
 
   const apiBase =
     options.apiBase?.trim() ||
     process.env.PAPERCLIP_API_URL?.trim() ||
+    runtimeContext.apiBase ||
     profile.apiBase ||
     inferApiBaseFromConfig(options.config);
 
   const explicitApiKey =
     options.apiKey?.trim() ||
     process.env.PAPERCLIP_API_KEY?.trim() ||
+    runtimeContext.apiKey ||
     readKeyFromProfileEnv(profile);
   const storedBoardCredential = explicitApiKey ? null : getStoredBoardCredential(apiBase);
   const apiKey = explicitApiKey || storedBoardCredential?.token;
@@ -65,7 +103,11 @@ export function resolveCommandContext(
   const companyId =
     options.companyId?.trim() ||
     process.env.PAPERCLIP_COMPANY_ID?.trim() ||
+    runtimeContext.companyId ||
     profile.companyId;
+  const runId =
+    process.env.PAPERCLIP_RUN_ID?.trim() ||
+    runtimeContext.runId;
 
   if (opts?.requireCompany && !companyId) {
     throw new Error(
@@ -76,6 +118,7 @@ export function resolveCommandContext(
   const api = new PaperclipApiClient({
     apiBase,
     apiKey,
+    runId,
     recoverAuth: explicitApiKey || !canAttemptInteractiveBoardAuth()
       ? undefined
       : async ({ error }) => {

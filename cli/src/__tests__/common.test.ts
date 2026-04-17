@@ -18,6 +18,8 @@ describe("resolveCommandContext", () => {
     delete process.env.PAPERCLIP_API_URL;
     delete process.env.PAPERCLIP_API_KEY;
     delete process.env.PAPERCLIP_COMPANY_ID;
+    delete process.env.PAPERCLIP_RUN_ID;
+    delete process.env.PAPERCLIP_RUNTIME_CONTEXT_FILE;
   });
 
   afterEach(() => {
@@ -94,5 +96,25 @@ describe("resolveCommandContext", () => {
     expect(() =>
       resolveCommandContext({ context: contextPath, apiBase: "http://localhost:3100" }, { requireCompany: true }),
     ).toThrow(/Company ID is required/);
+  });
+
+  it("loads API auth, company, and run id from the runtime context file", () => {
+    const runtimeContextPath = createTempPath("paperclip-runtime.json");
+    fs.writeFileSync(
+      runtimeContextPath,
+      JSON.stringify({
+        apiBase: "http://runtime:3100",
+        apiKey: "runtime-token",
+        companyId: "company-runtime",
+        runId: "run-runtime",
+      }),
+    );
+    process.env.PAPERCLIP_RUNTIME_CONTEXT_FILE = runtimeContextPath;
+
+    const resolved = resolveCommandContext({}, { requireCompany: true });
+    expect(resolved.api.apiBase).toBe("http://runtime:3100");
+    expect(resolved.api.apiKey).toBe("runtime-token");
+    expect(resolved.api.runId).toBe("run-runtime");
+    expect(resolved.companyId).toBe("company-runtime");
   });
 });
