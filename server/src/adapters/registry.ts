@@ -205,6 +205,7 @@ const hermesLocalAdapter: ServerAdapterModule = {
   execute: hermesExecute,
   testEnvironment: hermesTestEnvironment,
   sessionCodec: hermesSessionCodec,
+  sessionManagement: getAdapterSessionManagement("hermes_local") ?? undefined,
   listSkills: hermesListSkills,
   syncSkills: hermesSyncSkills,
   models: hermesModels,

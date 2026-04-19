@@ -223,6 +223,7 @@ export function OnboardingWizard() {
     pi_local: "pi",
     cursor: "agent",
     opencode_local: "opencode",
+    hermes_local: "hermes",
   };
   const effectiveAdapterCommand =
     command.trim() ||
@@ -1022,16 +1023,28 @@ export function OnboardingWizard() {
                                 ? `${effectiveAdapterCommand} --output-format json "Respond with hello."`
                               : adapterType === "opencode_local"
                                 ? `${effectiveAdapterCommand} run --format json "Respond with hello."`
+                              : adapterType === "hermes_local"
+                                ? `${effectiveAdapterCommand} chat -q "Respond with hello." -Q`
                               : `${effectiveAdapterCommand} --print - --output-format stream-json --verbose`}
                           </p>
                           <p className="text-muted-foreground">
                             Prompt:{" "}
                             <span className="font-mono">Respond with hello.</span>
                           </p>
-                          {adapterType === "cursor" ||
-                          adapterType === "codex_local" ||
-                          adapterType === "gemini_local" ||
-                          adapterType === "opencode_local" ? (
+                          {adapterType === "hermes_local" ? (
+                            <p className="text-muted-foreground">
+                              If auth fails, set{" "}
+                              <span className="font-mono">
+                                ANTHROPIC_API_KEY / OPENROUTER_API_KEY /
+                                OPENAI_API_KEY
+                              </span>{" "}
+                              in env or{" "}
+                              <span className="font-mono">~/.hermes/.env</span>.
+                            </p>
+                          ) : adapterType === "cursor" ||
+                            adapterType === "codex_local" ||
+                            adapterType === "gemini_local" ||
+                            adapterType === "opencode_local" ? (
                             <p className="text-muted-foreground">
                               If auth fails, set{" "}
                               <span className="font-mono">

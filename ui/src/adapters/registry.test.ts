@@ -48,4 +48,48 @@ describe("ui adapter registry", () => {
     // But it uses the schema-based config fields for external adapter forms.
     expect(fallback.ConfigFields).toBe(SchemaConfigFields);
   });
+
+  it("maps Hermes create form values to the Hermes adapter config contract", () => {
+    const hermes = getUIAdapter("hermes_local");
+
+    expect(hermes.type).toBe("hermes_local");
+    expect(hermes.buildAdapterConfig({
+      adapterType: "hermes_local",
+      cwd: "/tmp/work",
+      instructionsFilePath: "/tmp/AGENTS.md",
+      promptTemplate: "Work the issue.",
+      model: "anthropic/claude-sonnet-4",
+      thinkingEffort: "high",
+      chrome: false,
+      dangerouslySkipPermissions: false,
+      search: false,
+      fastMode: false,
+      dangerouslyBypassSandbox: false,
+      command: "/opt/bin/hermes",
+      args: "",
+      extraArgs: "--verbose, --checkpoints",
+      envVars: "HERMES_LOG=debug",
+      envBindings: {
+        OPENROUTER_API_KEY: { type: "secret_ref", secretId: "secret-1" },
+      },
+      url: "",
+      bootstrapPrompt: "",
+      maxTurnsPerRun: 1000,
+      heartbeatEnabled: false,
+      intervalSec: 300,
+    })).toMatchObject({
+      cwd: "/tmp/work",
+      hermesCommand: "/opt/bin/hermes",
+      instructionsFilePath: "/tmp/AGENTS.md",
+      promptTemplate: "Work the issue.",
+      model: "anthropic/claude-sonnet-4",
+      persistSession: true,
+      timeoutSec: 300,
+      extraArgs: ["--verbose", "--checkpoints", "--reasoning-effort", "high"],
+      env: {
+        HERMES_LOG: { type: "plain", value: "debug" },
+        OPENROUTER_API_KEY: { type: "secret_ref", secretId: "secret-1" },
+      },
+    });
+  });
 });
