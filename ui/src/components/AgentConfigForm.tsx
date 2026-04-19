@@ -363,6 +363,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   const currentModelId = isCreate
     ? val!.model
     : eff("adapterConfig", "model", String(config.model ?? ""));
+  const commandConfigKey = adapterType === "hermes_local" ? "hermesCommand" : "command";
 
   const thinkingEffortKey =
     adapterType === "codex_local"
@@ -666,12 +667,16 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                   value={
                     isCreate
                       ? val!.command
-                      : eff("adapterConfig", "command", String(config.command ?? ""))
+                      : eff(
+                          "adapterConfig",
+                          commandConfigKey,
+                          String(config[commandConfigKey] ?? ""),
+                        )
                   }
                   onCommit={(v) =>
                     isCreate
                       ? set!({ command: v })
-                      : mark("adapterConfig", "command", v || null)
+                      : mark("adapterConfig", commandConfigKey, v || null)
                   }
                   immediate
                   className={inputClass}
@@ -683,6 +688,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                       pi_local: "pi",
                       cursor: "agent",
                       opencode_local: "opencode",
+                      hermes_local: "hermes",
                     } as Record<string, string>)[adapterType] ?? adapterType.replace(/_local$/, "")
                   }
                 />
