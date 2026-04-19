@@ -3071,7 +3071,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
         continue;
       }
       selectedProjects.set(match.id, match);
-      const projectIssues = await issuesSvc.list(companyId, { projectId: match.id });
+      const projectIssues = await issuesSvc.list(companyId, { projectId: match.id, fullDescription: true });
       for (const issue of projectIssues) {
         selectedIssues.set(issue.id, issue);
       }
@@ -3087,7 +3087,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
     }
 
     if (include.issues && selectedIssues.size === 0) {
-      const allIssues = await issuesSvc.list(companyId);
+      const allIssues = await issuesSvc.list(companyId, { fullDescription: true });
       for (const issue of allIssues) {
         selectedIssues.set(issue.id, issue);
         if (issue.projectId) {

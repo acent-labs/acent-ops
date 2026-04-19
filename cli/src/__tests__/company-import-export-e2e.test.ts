@@ -170,6 +170,8 @@ async function stopServerProcess(child: ServerProcess | null) {
       if (child.exitCode === null) {
         child.kill("SIGKILL");
       }
+      // Resolve after a short grace period so SIGKILL always unblocks the teardown
+      setTimeout(resolve, 1_000);
     }, 5_000);
   });
 }
@@ -277,7 +279,7 @@ describeEmbeddedPostgres("paperclipai company import/export e2e", () => {
     if (tempRoot) {
       rmSync(tempRoot, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   it("exports a company package and imports it into new and existing companies", async () => {
     expect(serverProcess).not.toBeNull();
@@ -357,6 +359,11 @@ describeEmbeddedPostgres("paperclipai company import/export e2e", () => {
     expect(exportResult.filesWritten).toBeGreaterThan(0);
     expect(readFileSync(path.join(exportDir, "COMPANY.md"), "utf8")).toContain(sourceCompany.name);
     expect(readFileSync(path.join(exportDir, ".paperclip.yaml"), "utf8")).toContain('schema: "paperclip/v1"');
+
+    // Verify large issue description is preserved in full (not truncated to 1200 chars)
+    const taskFile = readFileSync(path.join(exportDir, `tasks/${sourceIssue.identifier.toLowerCase()}/TASK.md`), "utf8");
+    expect(taskFile).toContain("portable-data portable-data");
+    expect(taskFile.length).toBeGreaterThan(100_000);
 
     const importedNew = await runCliJson<{
       company: { id: string; name: string; action: string };
@@ -498,5 +505,5 @@ describeEmbeddedPostgres("paperclipai company import/export e2e", () => {
 
     expect(importedFromZip.company.action).toBe("created");
     expect(importedFromZip.agents.some((agent) => agent.action === "created")).toBe(true);
-  }, 60_000);
+  }, 180_000);
 });

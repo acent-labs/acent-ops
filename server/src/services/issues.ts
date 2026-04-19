@@ -82,6 +82,8 @@ export interface IssueFilters {
   excludeRoutineExecutions?: boolean;
   q?: string;
   limit?: number;
+  /** When true, returns the full description without truncation. Use only for export/portability paths. */
+  fullDescription?: boolean;
 }
 
 type IssueRow = typeof issues.$inferSelect;
@@ -1050,8 +1052,11 @@ export function issueService(db: Db) {
         END
       `;
       const canonicalLastActivityAt = issueCanonicalLastActivityAtExpr(companyId);
+      const selectShape = filters?.fullDescription
+        ? { ...issueListSelect, description: issues.description }
+        : issueListSelect;
       const baseQuery = db
-        .select(issueListSelect)
+        .select(selectShape)
         .from(issues)
         .where(and(...conditions))
         .orderBy(
