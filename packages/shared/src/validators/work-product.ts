@@ -15,6 +15,8 @@ export const issueWorkProductStatusSchema = z.enum([
   "ready_for_review",
   "approved",
   "changes_requested",
+  "queued_for_publish",
+  "published",
   "merged",
   "closed",
   "failed",
@@ -52,3 +54,30 @@ export type CreateIssueWorkProduct = z.infer<typeof createIssueWorkProductSchema
 export const updateIssueWorkProductSchema = createIssueWorkProductSchema.partial();
 
 export type UpdateIssueWorkProduct = z.infer<typeof updateIssueWorkProductSchema>;
+
+export const issueDeliverableChannelSchema = z.enum([
+  "x",
+  "linkedin",
+  "blog",
+  "homepage",
+  "deck",
+]);
+
+export const workProductSteeringActionSchema = z.enum([
+  "comment",
+  "approve",
+  "request_changes",
+  "queue_for_publish",
+  "send_to_openclaw",
+  "mark_published",
+  "archive",
+]);
+
+export const workProductSteeringSchema = z.object({
+  action: workProductSteeringActionSchema,
+  comment: z.string().optional(),
+  channel: issueDeliverableChannelSchema.optional(),
+  openClawAgentId: z.string().uuid().optional(),
+});
+
+export type WorkProductSteering = z.infer<typeof workProductSteeringSchema>;

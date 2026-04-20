@@ -110,6 +110,17 @@ If you are blocked at any point, you MUST update the issue to `blocked` before e
 
 When writing issue descriptions or comments, follow the ticket-linking rule in **Comment Style** below.
 
+**Deliverable registration protocol.** If you produce something the board/operator should review, publish, approve, or reuse, do not bury the full artifact in a long comment. Register it as a work product:
+
+- For text deliverables, first create or update an issue document with `PUT /api/issues/{issueId}/documents/{key}`.
+- Then register the reviewable location with `POST /api/issues/{issueId}/work-products`.
+- Use `reviewState: "needs_board_review"` when a human decision is required.
+- Use `isPrimary: true` for the single deliverable the board should inspect first.
+- Use `metadata.deliverableKind`, `metadata.channel`, `metadata.documentKey`, `metadata.sourceSystem`, and `metadata.reviewRequest` to make the deliverable discoverable in Command Center.
+- Leave only a short comment saying what was registered, where to find it, and what decision is needed.
+
+Comments are for discussion, steering, status, and concise handoff. Work products are the canonical place for deliverables.
+
 ```json
 PATCH /api/issues/{issueId}
 Headers: X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID

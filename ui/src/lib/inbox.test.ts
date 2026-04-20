@@ -284,6 +284,11 @@ const dashboard: DashboardSummary = {
     monthUtilizationPercent: 90,
   },
   pendingApprovals: 1,
+  deliverables: {
+    needsReview: 0,
+    publishQueue: 0,
+    openClawEvidence: 0,
+  },
   budgets: {
     activeIncidents: 0,
     pendingApprovals: 0,

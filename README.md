@@ -57,6 +57,7 @@ This repository contains the full product surface:
 - `cli/` + `scripts/` — onboarding, dev runner, worktree, backup, release, and operational tooling
 
 > Repository note: this checkout is `acent-labs/acent-ops`, with `paperclipai/paperclip` as upstream. Prefer the docs and code in this repository over assumptions copied from other forks or older upstream snapshots.
+> ACENT operators should use `AGENTS.md` for worker rules, `docs/handover.md` for current operating context, and `docs/api/issues.md` for deliverable/steering API details.
 
 ## Read This First
 

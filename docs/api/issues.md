@@ -169,6 +169,39 @@ DELETE /api/issues/{issueId}/documents/{key}
 
 Delete is board-only in the current implementation.
 
+## Deliverables / Work Products
+
+Deliverables are reviewable work products. Comments should point to these records instead of containing the full artifact body.
+This section is the API contract for Command Center review, publish queue, and OpenClaw action evidence. Keep operating context in `docs/handover.md` and endpoint details here.
+
+### Company Review List
+
+```
+GET /api/companies/{companyId}/deliverables
+```
+
+Optional filters: `status`, `reviewState`, `projectId`, `provider`, `kind`, `channel`, `limit`.
+
+### Issue Roll-up
+
+```
+GET /api/issues/{issueId}/deliverables?includeDescendants=true
+```
+
+When `includeDescendants=true`, the response includes work products registered on child issues so parent issues can serve as a review surface.
+
+### Steering
+
+```
+POST /api/work-products/{workProductId}/steering
+{
+  "action": "approve",
+  "comment": "Approved for the next step."
+}
+```
+
+Supported actions: `comment`, `approve`, `request_changes`, `queue_for_publish`, `send_to_openclaw`, `mark_published`, `archive`.
+
 ## Attachments
 
 ### Upload

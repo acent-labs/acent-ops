@@ -15,6 +15,12 @@ describe("company routes", () => {
     );
   });
 
+  it("treats command center as a board route that needs a company prefix", () => {
+    expect(isBoardPathWithoutPrefix("/command-center")).toBe(true);
+    expect(extractCompanyPrefixFromPath("/command-center")).toBeNull();
+    expect(applyCompanyPrefix("/command-center?tab=review", "ACENT")).toBe("/ACENT/command-center?tab=review");
+  });
+
   it("normalizes prefixed execution workspace paths back to company-relative paths", () => {
     expect(toCompanyRelativePath("/PAP/execution-workspaces/workspace-123")).toBe(
       "/execution-workspaces/workspace-123",

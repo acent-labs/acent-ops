@@ -59,6 +59,7 @@ import { relativeTime, cn, formatTokens, visibleRunCostUsd } from "../lib/utils"
 import { ApprovalCard } from "../components/ApprovalCard";
 import { InlineEditor } from "../components/InlineEditor";
 import { IssueChatThread, type IssueChatComposerHandle } from "../components/IssueChatThread";
+import { DeliverablesPanel } from "../components/DeliverablesPanel";
 import { IssueDocumentsSection } from "../components/IssueDocumentsSection";
 import { IssuesList } from "../components/IssuesList";
 import { IssueProperties } from "../components/IssueProperties";
@@ -989,6 +990,16 @@ export function IssueDetail() {
     queryFn: () => agentsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+  const openClawAgents = useMemo(
+    () => (agents ?? []).filter((agent) => agent.adapterType === "openclaw_gateway" && agent.status !== "terminated"),
+    [agents],
+  );
+  const deliverableFilters = useMemo(() => ({ includeDescendants: true, limit: 100 }), []);
+  const { data: issueDeliverables = [], isLoading: issueDeliverablesLoading } = useQuery({
+    queryKey: queryKeys.issues.deliverables(issueId!, deliverableFilters),
+    queryFn: () => issuesApi.listIssueDeliverables(issueId!, deliverableFilters),
+    enabled: !!issueId,
+  });
   const { data: companyMembers } = useQuery({
     queryKey: queryKeys.access.companyUserDirectory(selectedCompanyId!),
     queryFn: () => accessApi.listUserDirectory(selectedCompanyId!),
@@ -1749,6 +1760,28 @@ export function IssueDetail() {
     },
   });
 
+  const steerDeliverable = useMutation({
+    mutationFn: ({ workProductId, data }: { workProductId: string; data: Parameters<typeof issuesApi.steerWorkProduct>[1] }) =>
+      issuesApi.steerWorkProduct(workProductId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.deliverables(issueId!, deliverableFilters) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(issueId!) });
+      if (selectedCompanyId) {
+        queryClient.invalidateQueries({ queryKey: ["deliverables", selectedCompanyId] });
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(selectedCompanyId) });
+      }
+      invalidateIssueDetail();
+      pushToast({ title: "Deliverable updated", tone: "success" });
+    },
+    onError: (err) => {
+      pushToast({
+        title: "Deliverable update failed",
+        body: err instanceof Error ? err.message : "Unable to update deliverable",
+        tone: "error",
+      });
+    },
+  });
+
   const archiveFromInbox = useMutation({
     mutationFn: (id: string) => issuesApi.archiveFromInbox(id),
     onSuccess: () => {
@@ -2402,6 +2435,28 @@ export function IssueDetail() {
         itemClassName="rounded-lg border border-border p-3"
         missingBehavior="placeholder"
       />
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-medium text-muted-foreground">Deliverables</h3>
+            <p className="text-xs text-muted-foreground">
+              Reviewable work products from this issue and its sub-issues.
+            </p>
+          </div>
+          <Button variant="outline" size="sm" asChild>
+            <Link to="/command-center">Command Center</Link>
+          </Button>
+        </div>
+        <DeliverablesPanel
+          items={issueDeliverables}
+          isLoading={issueDeliverablesLoading}
+          openClawAgents={openClawAgents}
+          emptyMessage="No deliverables registered for this issue yet."
+          onSteer={(workProductId, data) =>
+            steerDeliverable.mutateAsync({ workProductId, data }).then(() => undefined)}
+        />
+      </div>
 
       {showRichSubIssuesSection ? (
         <div className="space-y-3">

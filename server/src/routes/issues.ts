@@ -21,6 +21,7 @@ import {
   updateIssueWorkProductSchema,
   upsertIssueDocumentSchema,
   updateIssueSchema,
+  workProductSteeringSchema,
   getClosedIsolatedExecutionWorkspaceMessage,
   isClosedIsolatedExecutionWorkspace,
   type ExecutionWorkspace,
@@ -325,6 +326,30 @@ export function issueRoutes(
 
   function parseBooleanQuery(value: unknown) {
     return value === true || value === "true" || value === "1";
+  }
+
+  function parsePositiveLimitQuery(value: unknown, defaultValue = 100, maxValue = 500) {
+    if (value === undefined || value === null || value === "") return defaultValue;
+    if (typeof value !== "string") throw new HttpError(400, "limit must be a positive integer");
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isInteger(parsed) || parsed <= 0) throw new HttpError(400, "limit must be a positive integer");
+    return Math.min(parsed, maxValue);
+  }
+
+  function parseDeliverableFilters(req: Request) {
+    return {
+      status: req.query.status as string | undefined,
+      reviewState: req.query.reviewState as string | undefined,
+      projectId: req.query.projectId as string | undefined,
+      provider: req.query.provider as string | undefined,
+      kind: req.query.kind as string | undefined,
+      channel: req.query.channel as string | undefined,
+      limit: parsePositiveLimitQuery(req.query.limit),
+    };
+  }
+
+  function isPlainRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
   }
 
   function parseDateQuery(value: unknown, field: string) {
@@ -664,6 +689,13 @@ export function issueRoutes(
     res.json(result);
   });
 
+  router.get("/companies/:companyId/deliverables", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const result = await workProductsSvc.listForCompanyDeliverables(companyId, parseDeliverableFilters(req));
+    res.json(result);
+  });
+
   router.get("/companies/:companyId/labels", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
@@ -846,6 +878,21 @@ export function issueRoutes(
     assertCompanyAccess(req, issue.companyId);
     const workProducts = await workProductsSvc.listForIssue(issue.id);
     res.json(workProducts);
+  });
+
+  router.get("/issues/:id/deliverables", async (req, res) => {
+    const id = req.params.id as string;
+    const issue = await svc.getById(id);
+    if (!issue) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    assertCompanyAccess(req, issue.companyId);
+    const deliverables = await workProductsSvc.listDeliverablesForIssue(issue.id, {
+      includeDescendants: parseBooleanQuery(req.query.includeDescendants),
+      filters: parseDeliverableFilters(req),
+    });
+    res.json(deliverables ?? []);
   });
 
   router.get("/issues/:id/documents", async (req, res) => {
@@ -1097,6 +1144,219 @@ export function issueRoutes(
       details: { workProductId: product.id, changedKeys: Object.keys(req.body).sort() },
     });
     res.json(product);
+  });
+
+  router.post("/work-products/:id/steering", validate(workProductSteeringSchema), async (req, res) => {
+    const id = req.params.id as string;
+    const existing = await workProductsSvc.getById(id);
+    if (!existing) {
+      res.status(404).json({ error: "Work product not found" });
+      return;
+    }
+    assertCompanyAccess(req, existing.companyId);
+    const sourceIssue = await svc.getById(existing.issueId);
+    if (!sourceIssue) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+
+    const actor = getActorInfo(req);
+    const addSteeringComment = async (body: string) => {
+      const comment = await svc.addComment(sourceIssue.id, body, {
+        agentId: actor.agentId ?? undefined,
+        userId: actor.actorType === "user" ? actor.actorId : undefined,
+        runId: actor.runId,
+      });
+      await logActivity(db, {
+        companyId: sourceIssue.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action: "issue.comment_added",
+        entityType: "issue",
+        entityId: sourceIssue.id,
+        details: {
+          commentId: comment.id,
+          bodySnippet: comment.body.slice(0, 120),
+          identifier: sourceIssue.identifier,
+          issueTitle: sourceIssue.title,
+          source: "work_product_steering",
+          workProductId: existing.id,
+        },
+      });
+      return comment;
+    };
+
+    const updateProduct = async (patch: Parameters<typeof workProductsSvc.update>[1]) => {
+      const product = await workProductsSvc.update(existing.id, patch);
+      if (!product) throw notFound("Work product not found");
+      await logActivity(db, {
+        companyId: existing.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action: "issue.work_product_updated",
+        entityType: "issue",
+        entityId: existing.issueId,
+        details: { workProductId: existing.id, changedKeys: Object.keys(patch).sort(), source: "steering" },
+      });
+      return product;
+    };
+
+    const currentMetadata = isPlainRecord(existing.metadata) ? existing.metadata : {};
+    const commentText = typeof req.body.comment === "string" ? req.body.comment.trim() : "";
+
+    if (req.body.action === "comment") {
+      if (!commentText) {
+        res.status(422).json({ error: "comment is required for comment steering" });
+        return;
+      }
+      const comment = await addSteeringComment(commentText);
+      res.json({ workProduct: existing, comment });
+      return;
+    }
+
+    if (req.body.action === "approve") {
+      const product = await updateProduct({ status: "approved", reviewState: "approved" });
+      const comment = await addSteeringComment(commentText || `Approved deliverable: ${existing.title}`);
+      res.json({ workProduct: product, comment });
+      return;
+    }
+
+    if (req.body.action === "request_changes") {
+      const product = await updateProduct({ status: "changes_requested", reviewState: "changes_requested" });
+      const comment = await addSteeringComment(commentText || `Changes requested for deliverable: ${existing.title}`);
+      res.json({ workProduct: product, comment });
+      return;
+    }
+
+    if (req.body.action === "queue_for_publish") {
+      const product = await updateProduct({
+        status: "queued_for_publish",
+        metadata: {
+          ...currentMetadata,
+          ...(req.body.channel ? { channel: req.body.channel } : {}),
+        },
+      });
+      const comment = commentText
+        ? await addSteeringComment(commentText)
+        : null;
+      res.json({ workProduct: product, comment });
+      return;
+    }
+
+    if (req.body.action === "mark_published") {
+      const product = await updateProduct({
+        status: "published",
+        reviewState: existing.reviewState === "needs_board_review" ? "approved" : existing.reviewState,
+      });
+      const comment = commentText
+        ? await addSteeringComment(commentText)
+        : null;
+      res.json({ workProduct: product, comment });
+      return;
+    }
+
+    if (req.body.action === "archive") {
+      const product = await updateProduct({ status: "archived" });
+      const comment = commentText
+        ? await addSteeringComment(commentText)
+        : null;
+      res.json({ workProduct: product, comment });
+      return;
+    }
+
+    if (req.body.action === "send_to_openclaw") {
+      await assertCanAssignTasks(req, existing.companyId);
+      const openClawAgents = (await agentsSvc.list(existing.companyId))
+        .filter((agent) => agent.adapterType === "openclaw_gateway" && agent.status !== "terminated");
+      const selectedAgent = req.body.openClawAgentId
+        ? openClawAgents.find((agent) => agent.id === req.body.openClawAgentId) ?? null
+        : openClawAgents.length === 1
+          ? openClawAgents[0] ?? null
+          : null;
+
+      if (!selectedAgent) {
+        res.status(422).json({
+          error: openClawAgents.length === 0
+            ? "OpenClaw agent required"
+            : "Multiple OpenClaw agents available; openClawAgentId is required",
+        });
+        return;
+      }
+
+      const channel = req.body.channel ?? (typeof currentMetadata.channel === "string" ? currentMetadata.channel : undefined);
+      const openClawIssue = await svc.create(existing.companyId, {
+        title: `OpenClaw action: ${existing.title}`,
+        description: [
+          "Execute the approved deliverable through OpenClaw and report evidence back to Paperclip.",
+          "",
+          `Source deliverable: ${existing.title}`,
+          `Source work product id: ${existing.id}`,
+          `Source issue: ${sourceIssue.identifier ?? sourceIssue.id} — ${sourceIssue.title}`,
+          channel ? `Channel: ${channel}` : null,
+          existing.url ? `Deliverable URL: ${existing.url}` : null,
+          "",
+          "Required result:",
+          "- complete the requested browser/external UI action",
+          "- post a concise result comment",
+          "- register an action_evidence work product with URL/screenshot evidence when available",
+        ].filter(Boolean).join("\n"),
+        status: "todo",
+        priority: "medium",
+        assigneeAgentId: selectedAgent.id,
+        projectId: sourceIssue.projectId,
+        goalId: sourceIssue.goalId,
+        parentId: sourceIssue.id,
+        createdByAgentId: actor.agentId,
+        createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+      });
+
+      await logActivity(db, {
+        companyId: existing.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action: "issue.created",
+        entityType: "issue",
+        entityId: openClawIssue.id,
+        details: {
+          title: openClawIssue.title,
+          identifier: openClawIssue.identifier,
+          source: "work_product_steering",
+          sourceWorkProductId: existing.id,
+        },
+      });
+
+      void queueIssueAssignmentWakeup({
+        heartbeat,
+        issue: openClawIssue,
+        reason: "issue_assigned",
+        mutation: "create",
+        contextSource: "work-product.steering.send_to_openclaw",
+        requestedByActorType: actor.actorType,
+        requestedByActorId: actor.actorId,
+      });
+
+      const product = await updateProduct({
+        status: "queued_for_publish",
+        metadata: {
+          ...currentMetadata,
+          ...(channel ? { channel } : {}),
+          openClawIssueId: openClawIssue.id,
+        },
+      });
+      const comment = await addSteeringComment(
+        commentText || `Queued deliverable for OpenClaw execution: ${openClawIssue.identifier ?? openClawIssue.id}`,
+      );
+      res.json({ workProduct: product, comment, openClawIssue });
+      return;
+    }
+
+    res.status(422).json({ error: "Unsupported steering action" });
   });
 
   router.delete("/work-products/:id", async (req, res) => {
