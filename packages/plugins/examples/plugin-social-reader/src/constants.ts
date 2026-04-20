@@ -10,6 +10,8 @@ export const TOOL_NAMES = {
 } as const;
 
 export const DEFAULT_CONFIG = {
+  /** Paperclip secret ref for TWITTER_BEARER_TOKEN. Used for app-only read access when present. */
+  bearerTokenRef: "",
   /** Paperclip secret ref for TWITTER_CONSUMER_KEY. Falls back to env var if empty. */
   consumerKeyRef: "",
   /** Paperclip secret ref for TWITTER_CONSUMER_SECRET. Falls back to env var if empty. */
