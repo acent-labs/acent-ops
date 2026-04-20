@@ -23,6 +23,12 @@ const manifest: PaperclipPluginManifestV1 = {
   instanceConfigSchema: {
     type: "object",
     properties: {
+      bearerTokenRef: {
+        type: "string",
+        title: "X Bearer Token (secret ref)",
+        description: "Paperclip secret reference for app-only read access. Falls back to TWITTER_BEARER_TOKEN env var if empty.",
+        default: DEFAULT_CONFIG.bearerTokenRef,
+      },
       consumerKeyRef: {
         type: "string",
         title: "X Consumer Key (secret ref)",

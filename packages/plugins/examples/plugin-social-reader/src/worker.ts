@@ -14,6 +14,7 @@ import { XApiClient, type XCredentials } from "./x-client.js";
 // ---------------------------------------------------------------------------
 
 type SocialReaderConfig = {
+  bearerTokenRef?: string;
   consumerKeyRef?: string;
   consumerSecretRef?: string;
   accessTokenRef?: string;
@@ -30,7 +31,7 @@ async function resolveValue(
   ctx: PluginContext,
   ref: string | undefined,
   envFallback: string,
-): Promise<string> {
+): Promise<string | undefined> {
   if (ref) {
     try {
       return await ctx.secrets.resolve(ref);
@@ -39,12 +40,11 @@ async function resolveValue(
     }
   }
   const value = process.env[envFallback];
-  if (!value) {
-    throw new Error(
-      `Missing credential: set the "${envFallback}" secret ref in plugin config, or set the ${envFallback} environment variable`,
-    );
-  }
-  return value;
+  return value || undefined;
+}
+
+function hasOAuth1Credentials(creds: XCredentials): boolean {
+  return !!creds.consumerKey && !!creds.consumerSecret && !!creds.accessToken && !!creds.accessTokenSecret;
 }
 
 async function resolveCredentials(ctx: PluginContext): Promise<XCredentials> {
@@ -52,12 +52,22 @@ async function resolveCredentials(ctx: PluginContext): Promise<XCredentials> {
     ...DEFAULT_CONFIG,
     ...((await ctx.config.get()) as SocialReaderConfig),
   };
-  return {
+  const creds: XCredentials = {
+    bearerToken: await resolveValue(ctx, config.bearerTokenRef, "TWITTER_BEARER_TOKEN"),
     consumerKey: await resolveValue(ctx, config.consumerKeyRef, "TWITTER_CONSUMER_KEY"),
     consumerSecret: await resolveValue(ctx, config.consumerSecretRef, "TWITTER_CONSUMER_SECRET"),
     accessToken: await resolveValue(ctx, config.accessTokenRef, "TWITTER_ACCESS_TOKEN"),
     accessTokenSecret: await resolveValue(ctx, config.accessTokenSecretRef, "TWITTER_ACCESS_TOKEN_SECRET"),
   };
+
+  if (!creds.bearerToken && !hasOAuth1Credentials(creds)) {
+    throw new Error(
+      "Missing X credentials: configure TWITTER_BEARER_TOKEN for public read access, or configure the OAuth1 credential set " +
+        "(TWITTER_CONSUMER_KEY, TWITTER_CONSUMER_SECRET, TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_TOKEN_SECRET).",
+    );
+  }
+
+  return creds;
 }
 
 async function getClient(ctx: PluginContext): Promise<XApiClient> {
@@ -189,18 +199,23 @@ const plugin: PaperclipPlugin = definePlugin({
   },
 
   async onHealth(): Promise<PluginHealthDiagnostics> {
-    const hasEnvCreds =
+    const hasEnvOAuth1Creds =
       !!process.env.TWITTER_CONSUMER_KEY &&
-      !!process.env.TWITTER_ACCESS_TOKEN;
+      !!process.env.TWITTER_CONSUMER_SECRET &&
+      !!process.env.TWITTER_ACCESS_TOKEN &&
+      !!process.env.TWITTER_ACCESS_TOKEN_SECRET;
+    const hasEnvBearer = !!process.env.TWITTER_BEARER_TOKEN;
+    const hasEnvCreds = hasEnvBearer || hasEnvOAuth1Creds;
     return {
       status: hasEnvCreds || xClient ? "ok" : "degraded",
       message: hasEnvCreds || xClient
-        ? "Social Reader plugin ready"
-        : "X credentials not configured — set env vars or plugin secret refs",
+        ? "Social Reader plugin ready with XDK-backed credentials"
+        : "X credentials not configured — set TWITTER_BEARER_TOKEN or OAuth1 env vars/plugin secret refs",
       details: {
         pluginId: PLUGIN_ID,
         clientInitialized: !!xClient,
-        envCredentialsDetected: hasEnvCreds,
+        envBearerDetected: hasEnvBearer,
+        envOAuth1Detected: hasEnvOAuth1Creds,
       },
     };
   },
