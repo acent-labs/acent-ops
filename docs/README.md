@@ -9,9 +9,14 @@ Use this page to find the right depth quickly:
 
 ## Start here (most readers)
 
+- `handover.md` — ACENT-specific operating context for this fork
 - `start/quickstart.md`
 - `start/core-concepts.md`
 - `start/architecture.md`
+
+Note: `docs/` is ACENT-owned. If a `doc/` folder exists in this checkout, treat
+it as upstream/imported reference material unless the user explicitly asks to
+edit it.
 
 ## Product and operator documentation
 

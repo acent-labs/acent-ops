@@ -23,14 +23,44 @@ Keep this mental model in mind before touching code:
 
 Before making changes, read in this order:
 
-1. `docs/reference/GOAL.md`
-2. `docs/reference/PRODUCT.md`
-3. `docs/reference/SPEC-implementation.md`
-4. `docs/reference/DEVELOPING.md`
-5. `docs/reference/DATABASE.md`
+1. `docs/handover.md` for ACENT-specific operating context and handoff rules
+2. `docs/reference/GOAL.md`
+3. `docs/reference/PRODUCT.md`
+4. `docs/reference/SPEC-implementation.md`
+5. `docs/reference/DEVELOPING.md`
+6. `docs/reference/DATABASE.md`
 
 `docs/reference/SPEC.md` is long-horizon product context.
 `docs/reference/SPEC-implementation.md` is the concrete V1 build contract.
+
+For this fork, `docs/` is the ACENT-owned documentation and continuity layer. If
+a `doc/` folder exists, treat it as upstream/imported reference material unless
+the user explicitly asks to edit it.
+
+## 3.1 ACENT Operating Context
+
+When the user discusses Paperclip instructions, assume Paperclip is ACENT's
+internal company operating system/control plane, not a customer-facing ACENT
+message by default.
+
+Default operating pattern:
+
+- Founder/board intent should usually go to the Paperclip CEO first.
+- The Paperclip CEO decomposes work to CMO, CTO, CSO/CRO, directors, writers,
+  and workers through the org chart.
+- If the user asks for a "CEO instruction" or "directive," produce a copyable
+  Paperclip CEO directive with deliverables, role split, acceptance criteria,
+  and founder decision points.
+- Do not expose internal tools such as Paperclip, Hermes, MCP, or adapter names
+  in external ACENT sales/homepage copy unless explicitly requested.
+- Keep the distinction between org roles and adapters clear. Paperclip owns
+  agents, reporting, work items, approvals, and audit. Codex/Claude/Gemini are
+  execution runtimes for Paperclip employees; Hermes owns Monday CRM operations;
+  Codex may use Monday MCP for technical context and integration checks; OpenClaw
+  is the browser/external UI action operator.
+- Keep modes explicit: `review` means inspect/report, `planning` means plan or
+  draft directives, and `implementation` means changes/live actions only after
+  clear approval.
 
 ## 4. What Exists In This Repo Today
 
