@@ -10,6 +10,19 @@ before turning strategy discussion into implementation.
 - If a `doc/` folder exists, treat it as upstream/imported reference material unless
   the user explicitly says to edit it.
 - Keep durable local operating context in `docs/`, not scattered through chat.
+- Keep the core handoff surface small:
+  - `AGENTS.md` for worker behavior rules.
+  - `docs/handover.md` for ACENT operating context and current decisions.
+  - `README.md` for product/repository overview only.
+  - `docs/api/issues.md` for issue, document, deliverable, and steering API
+    contract.
+- Prefer updating these files over adding new operating docs.
+
+Current local company baseline:
+
+- Company name: `ACENT`
+- Issue prefix: `ACE`
+- Do not rename the company when changing the issue prefix.
 
 ## 2. What Paperclip Means Here
 
@@ -80,6 +93,44 @@ Practical examples:
 - Monday CRM updates, lead/deal hygiene, revenue reports: CRO/Hermes RevOps owns
   the work. Codex can inspect Monday MCP context when engineering or integration
   work needs it, but should not silently become the CRM operating owner.
+
+## 4.1 Command Center And Deliverables
+
+ACENT's operator-facing review layer is Command Center.
+
+- Paperclip is the operating and strategy office. It owns planning, discussion,
+  delegation, approvals, issue hierarchy, and audit trail.
+- CMO, CTO, CSO/CRO, directors, writers, analysts, and workers produce work
+  inside Paperclip, but reviewable output must be registered as a work product
+  deliverable rather than hidden in a long comment.
+- OpenClaw is the outside-world action operator. It owns browser actions,
+  publishing assistance, external SaaS/UI changes, screenshots, and execution
+  evidence after Paperclip assigns it an action issue.
+- Founder/board review should happen from Command Center whenever possible:
+  Review Inbox for approvals, Deliverables for all outputs, Publish Queue for
+  approved items awaiting external action, and Action Evidence for OpenClaw
+  results.
+- Comments remain useful for steering, discussion, short status, and handoff,
+  but they are not the canonical home for deliverables.
+
+Required deliverable convention:
+
+- Text output: store the body in an issue document, then create an issue work
+  product that points to `metadata.documentKey`.
+- External output: register the URL or attachment as a work product.
+- Human review needed: set `reviewState = needs_board_review`.
+- Main thing to inspect first: set `isPrimary = true`.
+- Include `metadata.deliverableKind`, `metadata.channel`, `metadata.sourceSystem`,
+  and `metadata.reviewRequest` when relevant.
+
+CMO/Content rule:
+
+- The final result is a deliverable, not a comment.
+- CMO marks the primary deliverable when multiple outputs exist.
+- Content Director and writers may register contributor deliverables or documents,
+  but anything the founder must decide on should surface in Command Center.
+- OpenClaw should receive execution work through a Paperclip issue, not an
+  out-of-band instruction, so its result can return as Action Evidence.
 
 ## 5. Work Modes
 

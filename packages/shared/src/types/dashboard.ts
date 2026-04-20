@@ -18,6 +18,11 @@ export interface DashboardSummary {
     monthUtilizationPercent: number;
   };
   pendingApprovals: number;
+  deliverables: {
+    needsReview: number;
+    publishQueue: number;
+    openClawEvidence: number;
+  };
   budgets: {
     activeIncidents: number;
     pendingApprovals: number;

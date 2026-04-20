@@ -4,12 +4,14 @@ import type {
   FeedbackTargetType,
   FeedbackTrace,
   FeedbackVote,
+  DeliverableListItem,
   Issue,
   IssueAttachment,
   IssueComment,
   IssueDocument,
   IssueLabel,
   IssueWorkProduct,
+  WorkProductSteeringRequest,
   UpsertIssueDocument,
 } from "@paperclipai/shared";
 import { api } from "./client";
@@ -161,9 +163,63 @@ export const issuesApi = {
   unlinkApproval: (id: string, approvalId: string) =>
     api.delete<{ ok: true }>(`/issues/${id}/approvals/${approvalId}`),
   listWorkProducts: (id: string) => api.get<IssueWorkProduct[]>(`/issues/${id}/work-products`),
+  listCompanyDeliverables: (
+    companyId: string,
+    filters?: {
+      status?: string;
+      reviewState?: string;
+      projectId?: string;
+      provider?: string;
+      kind?: string;
+      channel?: string;
+      limit?: number;
+    },
+  ) => {
+    const params = new URLSearchParams();
+    if (filters?.status) params.set("status", filters.status);
+    if (filters?.reviewState) params.set("reviewState", filters.reviewState);
+    if (filters?.projectId) params.set("projectId", filters.projectId);
+    if (filters?.provider) params.set("provider", filters.provider);
+    if (filters?.kind) params.set("kind", filters.kind);
+    if (filters?.channel) params.set("channel", filters.channel);
+    if (filters?.limit) params.set("limit", String(filters.limit));
+    const qs = params.toString();
+    return api.get<DeliverableListItem[]>(`/companies/${companyId}/deliverables${qs ? `?${qs}` : ""}`);
+  },
+  listIssueDeliverables: (
+    id: string,
+    filters?: {
+      includeDescendants?: boolean;
+      status?: string;
+      reviewState?: string;
+      projectId?: string;
+      provider?: string;
+      kind?: string;
+      channel?: string;
+      limit?: number;
+    },
+  ) => {
+    const params = new URLSearchParams();
+    if (filters?.includeDescendants) params.set("includeDescendants", "true");
+    if (filters?.status) params.set("status", filters.status);
+    if (filters?.reviewState) params.set("reviewState", filters.reviewState);
+    if (filters?.projectId) params.set("projectId", filters.projectId);
+    if (filters?.provider) params.set("provider", filters.provider);
+    if (filters?.kind) params.set("kind", filters.kind);
+    if (filters?.channel) params.set("channel", filters.channel);
+    if (filters?.limit) params.set("limit", String(filters.limit));
+    const qs = params.toString();
+    return api.get<DeliverableListItem[]>(`/issues/${id}/deliverables${qs ? `?${qs}` : ""}`);
+  },
   createWorkProduct: (id: string, data: Record<string, unknown>) =>
     api.post<IssueWorkProduct>(`/issues/${id}/work-products`, data),
   updateWorkProduct: (id: string, data: Record<string, unknown>) =>
     api.patch<IssueWorkProduct>(`/work-products/${id}`, data),
+  steerWorkProduct: (id: string, data: WorkProductSteeringRequest) =>
+    api.post<{
+      workProduct: IssueWorkProduct;
+      comment?: IssueComment | null;
+      openClawIssue?: Issue;
+    }>(`/work-products/${id}/steering`, data),
   deleteWorkProduct: (id: string) => api.delete<IssueWorkProduct>(`/work-products/${id}`),
 };

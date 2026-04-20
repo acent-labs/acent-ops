@@ -1,6 +1,6 @@
 import { and, eq, gte, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agents, approvals, companies, costEvents, issues } from "@paperclipai/db";
+import { agents, approvals, companies, costEvents, issueWorkProducts, issues } from "@paperclipai/db";
 import { notFound } from "../errors.js";
 import { budgetService } from "./budgets.js";
 
@@ -33,6 +33,29 @@ export function dashboardService(db: Db) {
         .from(approvals)
         .where(and(eq(approvals.companyId, companyId), eq(approvals.status, "pending")))
         .then((rows) => Number(rows[0]?.count ?? 0));
+
+      const [needsReview, publishQueue, openClawEvidence] = await Promise.all([
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(issueWorkProducts)
+          .where(and(eq(issueWorkProducts.companyId, companyId), eq(issueWorkProducts.reviewState, "needs_board_review")))
+          .then((rows) => Number(rows[0]?.count ?? 0)),
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(issueWorkProducts)
+          .where(and(eq(issueWorkProducts.companyId, companyId), eq(issueWorkProducts.status, "queued_for_publish")))
+          .then((rows) => Number(rows[0]?.count ?? 0)),
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(issueWorkProducts)
+          .where(
+            and(
+              eq(issueWorkProducts.companyId, companyId),
+              sql<boolean>`${issueWorkProducts.metadata}->>'deliverableKind' = 'action_evidence'`,
+            ),
+          )
+          .then((rows) => Number(rows[0]?.count ?? 0)),
+      ]);
 
       const agentCounts: Record<string, number> = {
         active: 0,
@@ -97,6 +120,11 @@ export function dashboardService(db: Db) {
           monthUtilizationPercent: Number(utilization.toFixed(2)),
         },
         pendingApprovals,
+        deliverables: {
+          needsReview,
+          publishQueue,
+          openClawEvidence,
+        },
         budgets: {
           activeIncidents: budgetOverview.activeIncidents.length,
           pendingApprovals: budgetOverview.pendingApprovalCount,

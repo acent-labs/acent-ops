@@ -163,11 +163,15 @@ export {
 export {
   createIssueWorkProductSchema,
   updateIssueWorkProductSchema,
+  workProductSteeringSchema,
+  workProductSteeringActionSchema,
+  issueDeliverableChannelSchema,
   issueWorkProductTypeSchema,
   issueWorkProductStatusSchema,
   issueWorkProductReviewStateSchema,
   type CreateIssueWorkProduct,
   type UpdateIssueWorkProduct,
+  type WorkProductSteering,
 } from "./work-product.js";
 
 export {

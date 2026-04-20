@@ -98,6 +98,14 @@ export type {
   IssueWorkProductProvider,
   IssueWorkProductStatus,
   IssueWorkProductReviewState,
+  IssueDeliverableKind,
+  IssueDeliverableChannel,
+  IssueDeliverableSourceSystem,
+  IssueDeliverableReviewRequest,
+  IssueDeliverableMetadata,
+  DeliverableListItem,
+  WorkProductSteeringAction,
+  WorkProductSteeringRequest,
 } from "./work-product.js";
 export type {
   Issue,

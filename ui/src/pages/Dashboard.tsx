@@ -21,7 +21,7 @@ import { ActivityRow } from "../components/ActivityRow";
 import { Identity } from "../components/Identity";
 import { timeAgo } from "../lib/timeAgo";
 import { cn, formatCents } from "../lib/utils";
-import { Bot, CircleDot, DollarSign, ShieldCheck, LayoutDashboard, PauseCircle } from "lucide-react";
+import { Bot, CircleDot, DollarSign, ShieldCheck, LayoutDashboard, PauseCircle, ClipboardCheck, Send, Eye } from "lucide-react";
 import { ActiveAgentsPanel } from "../components/ActiveAgentsPanel";
 import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart } from "../components/ActivityCharts";
 import { PageSkeleton } from "../components/PageSkeleton";
@@ -295,6 +295,30 @@ export function Dashboard() {
                     : "Awaiting board review"}
                 </span>
               }
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-1 sm:grid-cols-3 sm:gap-2">
+            <MetricCard
+              icon={ClipboardCheck}
+              value={data.deliverables.needsReview}
+              label="Needs Review"
+              to="/command-center?tab=review"
+              description={<span>Deliverables awaiting founder review</span>}
+            />
+            <MetricCard
+              icon={Send}
+              value={data.deliverables.publishQueue}
+              label="Publish Queue"
+              to="/command-center?tab=publish"
+              description={<span>Approved work waiting for external action</span>}
+            />
+            <MetricCard
+              icon={Eye}
+              value={data.deliverables.openClawEvidence}
+              label="OpenClaw Evidence"
+              to="/command-center?tab=evidence"
+              description={<span>Browser actions and published proof</span>}
             />
           </div>
 

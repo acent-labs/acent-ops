@@ -37,6 +37,16 @@ For this fork, `docs/` is the ACENT-owned documentation and continuity layer. If
 a `doc/` folder exists, treat it as upstream/imported reference material unless
 the user explicitly asks to edit it.
 
+Documentation ownership in this fork:
+
+- `AGENTS.md`: contributor and AI-worker behavior rules.
+- `docs/handover.md`: ACENT-specific operating context and current decisions.
+- `README.md`: product/repository entrypoint; keep internal ACENT details brief.
+- `docs/api/issues.md`: issue, document, deliverable, and steering API contract.
+
+Do not create additional operating docs unless they remove real ambiguity. When
+possible, update these existing documents instead of scattering new notes.
+
 ## 3.1 ACENT Operating Context
 
 When the user discusses Paperclip instructions, assume Paperclip is ACENT's
@@ -51,6 +61,9 @@ Default operating pattern:
 - If the user asks for a "CEO instruction" or "directive," produce a copyable
   Paperclip CEO directive with deliverables, role split, acceptance criteria,
   and founder decision points.
+- Reviewable outputs belong in work products/deliverables. Comments should be
+  used for discussion, status, and short pointers rather than as the canonical
+  home for final artifacts.
 - Do not expose internal tools such as Paperclip, Hermes, MCP, or adapter names
   in external ACENT sales/homepage copy unless explicitly requested.
 - Keep the distinction between org roles and adapters clear. Paperclip owns
