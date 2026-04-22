@@ -14,11 +14,22 @@ const mockWorkProductService = vi.hoisted(() => ({
   listDeliverablesForIssue: vi.fn(),
   getById: vi.fn(),
   update: vi.fn(),
+  createForIssue: vi.fn(),
 }));
 
 const mockAgentService = vi.hoisted(() => ({
   getById: vi.fn(),
   list: vi.fn(),
+}));
+
+const mockDocumentService = vi.hoisted(() => ({
+  getIssueDocumentPayload: vi.fn(async () => ({})),
+  getIssueDocumentByKey: vi.fn(),
+}));
+
+const mockToolDispatcher = vi.hoisted(() => ({
+  getTool: vi.fn(),
+  executeTool: vi.fn(),
 }));
 
 const mockLogActivity = vi.hoisted(() => vi.fn(async () => undefined));
@@ -34,9 +45,7 @@ vi.mock("../services/index.js", () => ({
     hasPermission: vi.fn(async () => true),
   }),
   agentService: () => mockAgentService,
-  documentService: () => ({
-    getIssueDocumentPayload: vi.fn(async () => ({})),
-  }),
+  documentService: () => mockDocumentService,
   executionWorkspaceService: () => ({
     getById: vi.fn(),
   }),
@@ -89,7 +98,9 @@ async function createApp() {
     };
     next();
   });
-  app.use("/api", issueRoutes({} as any, {} as any));
+  app.use("/api", issueRoutes({} as any, {} as any, {
+    getToolDispatcher: () => mockToolDispatcher as any,
+  }));
   app.use(errorHandler);
   return app;
 }
@@ -146,6 +157,23 @@ describe("issue deliverable routes", () => {
     });
     mockWorkProductService.getById.mockResolvedValue(workProduct);
     mockWorkProductService.update.mockResolvedValue({ ...workProduct, status: "approved", reviewState: "approved" });
+    mockWorkProductService.createForIssue.mockResolvedValue({
+      ...workProduct,
+      id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      type: "preview_url",
+      status: "published",
+      reviewState: "approved",
+      title: "X publish evidence: AI narrative briefing",
+      url: "https://x.com/i/web/status/2046425694436249985",
+      isPrimary: false,
+      metadata: {
+        deliverableKind: "action_evidence",
+        channel: "x",
+        sourceDeliverableId: workProduct.id,
+        sourceSystem: "paperclip",
+        evidenceUrl: "https://x.com/i/web/status/2046425694436249985",
+      },
+    });
     mockWorkProductService.listForCompanyDeliverables.mockResolvedValue([]);
     mockWorkProductService.listDeliverablesForIssue.mockResolvedValue([{
       workProduct,
@@ -160,6 +188,24 @@ describe("issue deliverable routes", () => {
       ownerAgent: null,
     }]);
     mockAgentService.list.mockResolvedValue([]);
+    mockDocumentService.getIssueDocumentByKey.mockResolvedValue({
+      key: "briefing",
+      body: "ACENT Paperclip에서 X API 포스팅 경로를 테스트합니다.",
+    });
+    mockToolDispatcher.getTool.mockReturnValue({ name: "x-create-post" });
+    mockToolDispatcher.executeTool.mockResolvedValue({
+      pluginId: "paperclip-social-reader",
+      toolName: "x-create-post",
+      result: {
+        data: {
+          data: {
+            id: "2046425694436249985",
+            text: "ACENT Paperclip에서 X API 포스팅 경로를 테스트합니다.",
+          },
+          url: "https://x.com/i/web/status/2046425694436249985",
+        },
+      },
+    });
   });
 
   it("lists company deliverables with filters", async () => {
@@ -223,5 +269,90 @@ describe("issue deliverable routes", () => {
 
     expect(res.body.error).toBe("OpenClaw agent required");
     expect(mockIssueService.create).not.toHaveBeenCalled();
+  });
+
+  it("publishes an X deliverable via API and registers action evidence", async () => {
+    const app = await createApp();
+    mockWorkProductService.getById.mockResolvedValue({
+      ...workProduct,
+      status: "queued_for_publish",
+      reviewState: "approved",
+      metadata: {
+        deliverableKind: "social_post",
+        documentKey: "briefing",
+        channel: "x",
+        sourceSystem: "paperclip",
+      },
+    });
+    mockWorkProductService.update.mockResolvedValue({
+      ...workProduct,
+      status: "published",
+      reviewState: "approved",
+      url: "https://x.com/i/web/status/2046425694436249985",
+      externalId: "2046425694436249985",
+      metadata: {
+        deliverableKind: "social_post",
+        documentKey: "briefing",
+        channel: "x",
+        sourceSystem: "paperclip",
+        evidenceUrl: "https://x.com/i/web/status/2046425694436249985",
+      },
+    });
+
+    const res = await request(app)
+      .post(`/api/work-products/${workProduct.id}/steering`)
+      .send({ action: "publish_via_api" })
+      .expect(200);
+
+    expect(mockToolDispatcher.executeTool).toHaveBeenCalledWith(
+      "paperclip-social-reader:x-create-post",
+      { text: "ACENT Paperclip에서 X API 포스팅 경로를 테스트합니다." },
+      expect.objectContaining({
+        companyId: "company-1",
+        projectId: sourceIssue.projectId,
+      }),
+    );
+    expect(mockWorkProductService.update).toHaveBeenCalledWith(workProduct.id, expect.objectContaining({
+      status: "published",
+      externalId: "2046425694436249985",
+      url: "https://x.com/i/web/status/2046425694436249985",
+    }));
+    expect(mockWorkProductService.createForIssue).toHaveBeenCalledWith(
+      sourceIssue.id,
+      "company-1",
+      expect.objectContaining({
+        type: "preview_url",
+        status: "published",
+        metadata: expect.objectContaining({
+          deliverableKind: "action_evidence",
+          channel: "x",
+          sourceDeliverableId: workProduct.id,
+        }),
+      }),
+    );
+    expect(res.body.evidenceWorkProduct.metadata.deliverableKind).toBe("action_evidence");
+  });
+
+  it("rejects direct API publish for non-X channels", async () => {
+    const app = await createApp();
+    mockWorkProductService.getById.mockResolvedValue({
+      ...workProduct,
+      status: "queued_for_publish",
+      reviewState: "approved",
+      metadata: {
+        deliverableKind: "social_post",
+        documentKey: "briefing",
+        channel: "linkedin",
+        sourceSystem: "paperclip",
+      },
+    });
+
+    const res = await request(app)
+      .post(`/api/work-products/${workProduct.id}/steering`)
+      .send({ action: "publish_via_api" })
+      .expect(422);
+
+    expect(res.body.error).toBe('Direct API publish currently supports only channel "x"');
+    expect(mockToolDispatcher.executeTool).not.toHaveBeenCalled();
   });
 });

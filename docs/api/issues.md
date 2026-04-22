@@ -200,7 +200,9 @@ POST /api/work-products/{workProductId}/steering
 }
 ```
 
-Supported actions: `comment`, `approve`, `request_changes`, `queue_for_publish`, `send_to_openclaw`, `mark_published`, `archive`.
+Supported actions: `comment`, `approve`, `request_changes`, `queue_for_publish`, `publish_via_api`, `send_to_openclaw`, `mark_published`, `archive`.
+
+`publish_via_api` currently supports direct publish for channel `x`. The host executes the configured X plugin tool, marks the source deliverable as `published`, and registers an `action_evidence` work product with the resulting URL when available.
 
 ## Attachments
 

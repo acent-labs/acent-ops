@@ -1,11 +1,44 @@
-import { Client, OAuth1, type ClientConfig, type OAuth1Config } from "@xdevplatform/xdk";
+import {
+  Client,
+  OAuth1,
+  OAuth2,
+  type ClientConfig,
+  type OAuth1Config,
+  type OAuth2Config,
+  type OAuth2Token,
+} from "@xdevplatform/xdk";
+import { X_OAUTH2_SCOPES } from "./constants.js";
+
+export interface XOAuth1Credentials {
+  consumerKey: string;
+  consumerSecret: string;
+  accessToken: string;
+  accessTokenSecret: string;
+}
+
+export interface XOAuth2Credentials {
+  clientId: string;
+  clientSecret?: string;
+  redirectUri: string;
+  scope?: string[];
+}
+
+export interface XOAuth2Tokens {
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt?: number;
+  expiresIn?: number;
+  tokenType?: string;
+  scope?: string;
+}
 
 export interface XCredentials {
   bearerToken?: string;
-  consumerKey?: string;
-  consumerSecret?: string;
-  accessToken?: string;
-  accessTokenSecret?: string;
+  oauth1?: XOAuth1Credentials;
+  oauth2?: {
+    credentials: XOAuth2Credentials;
+    tokens?: XOAuth2Tokens | null;
+  };
 }
 
 const USER_FIELDS = ["public_metrics", "description", "created_at", "profile_image_url", "verified_type"];
@@ -18,14 +51,8 @@ function clamp(value: number | undefined, min: number, max: number, fallback: nu
   return Math.max(min, Math.min(value, max));
 }
 
-function hasOAuth1Credentials(creds: XCredentials): creds is Required<Omit<XCredentials, "bearerToken">> & {
-  bearerToken?: string;
-} {
-  return !!creds.consumerKey && !!creds.consumerSecret && !!creds.accessToken && !!creds.accessTokenSecret;
-}
-
-function createOAuth1Client(creds: XCredentials): Client | null {
-  if (!hasOAuth1Credentials(creds)) return null;
+function createOAuth1Client(creds: XOAuth1Credentials | undefined): Client | null {
+  if (!creds) return null;
 
   const oauth1Config: OAuth1Config = {
     apiKey: creds.consumerKey,
@@ -39,9 +66,50 @@ function createOAuth1Client(creds: XCredentials): Client | null {
   return new Client(config);
 }
 
-function createBearerClient(creds: XCredentials): Client | null {
-  if (!creds.bearerToken) return null;
-  return new Client({ bearerToken: creds.bearerToken });
+function createAccessTokenClient(accessToken: string | undefined): Client | null {
+  if (!accessToken) return null;
+  return new Client({ accessToken });
+}
+
+function createBearerClient(bearerToken: string | undefined): Client | null {
+  if (!bearerToken) return null;
+  return new Client({ bearerToken });
+}
+
+export function createOAuth2Auth(config: XOAuth2Credentials, tokens?: XOAuth2Tokens | null): OAuth2 {
+  const oauth2Config: OAuth2Config = {
+    clientId: config.clientId,
+    clientSecret: config.clientSecret,
+    redirectUri: config.redirectUri,
+    scope: config.scope ?? [...X_OAUTH2_SCOPES],
+  };
+  const auth = new OAuth2(oauth2Config);
+
+  if (tokens?.accessToken) {
+    auth.setToken(
+      {
+        access_token: tokens.accessToken,
+        token_type: tokens.tokenType ?? "bearer",
+        expires_in: tokens.expiresIn ?? 0,
+        refresh_token: tokens.refreshToken,
+        scope: tokens.scope,
+      },
+      tokens.expiresAt,
+    );
+  }
+
+  return auth;
+}
+
+export function normalizeOAuth2Token(token: OAuth2Token): XOAuth2Tokens {
+  return {
+    accessToken: token.access_token,
+    refreshToken: token.refresh_token,
+    expiresAt: token.expires_in ? Date.now() + token.expires_in * 1000 : undefined,
+    expiresIn: token.expires_in,
+    tokenType: token.token_type,
+    scope: token.scope,
+  };
 }
 
 /**
@@ -51,33 +119,63 @@ function createBearerClient(creds: XCredentials): Client | null {
  * contracts can stay stable even if the upstream SDK shifts while still 0.x.
  */
 export class XApiClient {
-  private readonly userContextClient: Client | null;
-  private readonly readClient: Client | null;
+  private readonly oauth2Auth: OAuth2 | null;
+  private readonly oauth1Client: Client | null;
+  private oauth2Tokens: XOAuth2Tokens | null;
+  private userContextClient: Client | null;
+  private readClient: Client | null;
   private cachedUserId: string | null = null;
 
-  constructor(creds: XCredentials) {
-    this.userContextClient = createOAuth1Client(creds);
-    this.readClient = createBearerClient(creds) ?? this.userContextClient;
+  constructor(private readonly creds: XCredentials) {
+    this.oauth2Tokens = creds.oauth2?.tokens ?? null;
+    this.oauth2Auth = creds.oauth2?.credentials ? createOAuth2Auth(creds.oauth2.credentials, this.oauth2Tokens) : null;
+    this.oauth1Client = createOAuth1Client(creds.oauth1);
+    this.userContextClient = null;
+    this.readClient = null;
+    this.rebuildClients();
 
     if (!this.userContextClient && !this.readClient) {
       throw new Error(
-        "Missing X credentials: configure TWITTER_BEARER_TOKEN or the OAuth1 credential set " +
+        "Missing X credentials: configure TWITTER_BEARER_TOKEN, complete the OAuth 2.0 PKCE flow, or configure the OAuth1 credential set " +
           "(TWITTER_CONSUMER_KEY, TWITTER_CONSUMER_SECRET, TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_TOKEN_SECRET).",
       );
     }
   }
 
+  async ensureValidToken(): Promise<boolean> {
+    if (!this.oauth2Auth || !this.oauth2Tokens?.accessToken) return false;
+    if (!this.oauth2Auth.isTokenExpired()) return false;
+    const refreshed = await this.oauth2Auth.refreshToken(this.oauth2Tokens.refreshToken);
+    this.oauth2Tokens = normalizeOAuth2Token(refreshed);
+    this.cachedUserId = null;
+    this.rebuildClients();
+    return true;
+  }
+
+  getStoredOAuth2Tokens(): XOAuth2Tokens | null {
+    return this.oauth2Tokens;
+  }
+
   private requireUserContext(action: string): Client {
     if (this.userContextClient) return this.userContextClient;
     throw new Error(
-      `${action} requires OAuth1 user-context credentials. Configure TWITTER_CONSUMER_KEY, ` +
-        "TWITTER_CONSUMER_SECRET, TWITTER_ACCESS_TOKEN, and TWITTER_ACCESS_TOKEN_SECRET.",
+      `${action} requires user-context credentials. Complete X OAuth 2.0 PKCE or configure the OAuth1 credential set ` +
+        "(TWITTER_CONSUMER_KEY, TWITTER_CONSUMER_SECRET, TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_TOKEN_SECRET).",
     );
   }
 
   private requireReadClient(): Client {
     if (this.readClient) return this.readClient;
     return this.requireUserContext("X read operation");
+  }
+
+  private requireWriteClient(): Client {
+    return this.requireUserContext("x-create-post");
+  }
+
+  private rebuildClients(): void {
+    this.userContextClient = createAccessTokenClient(this.oauth2Tokens?.accessToken) ?? this.oauth1Client;
+    this.readClient = this.userContextClient ?? createBearerClient(this.creds.bearerToken);
   }
 
   /** Resolve the authenticated user's ID, caching after first call. */
@@ -97,6 +195,10 @@ export class XApiClient {
     return client.users.getMe({
       userFields: USER_FIELDS,
     });
+  }
+
+  async createPost(text: string): Promise<unknown> {
+    return this.requireWriteClient().posts.create({ text });
   }
 
   async getUserTweets(userId?: string, maxResults = 10): Promise<unknown> {

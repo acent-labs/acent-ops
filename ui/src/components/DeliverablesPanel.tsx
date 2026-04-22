@@ -59,6 +59,7 @@ const actionLabels: Record<WorkProductSteeringAction, string> = {
   approve: "Approve",
   request_changes: "Request changes",
   queue_for_publish: "Queue for publish",
+  publish_via_api: "Publish via API",
   send_to_openclaw: "Send to OpenClaw",
   mark_published: "Mark published",
   archive: "Archive",
@@ -94,6 +95,11 @@ function statusVariant(status: string) {
   if (status === "approved" || status === "published") return "default" as const;
   if (status === "queued_for_publish" || status === "ready_for_review") return "secondary" as const;
   return "outline" as const;
+}
+
+function canPublishViaApi(item: DeliverableListItem) {
+  const meta = metadataFor(item);
+  return meta.channel === "x" && item.workProduct.status === "queued_for_publish";
 }
 
 function DeliverableCard({
@@ -186,6 +192,12 @@ function DeliverableCard({
                 <UploadCloud className="h-3.5 w-3.5" />
                 Queue
               </Button>
+              {canPublishViaApi(item) && (
+                <Button size="xs" onClick={() => onAction(item, "publish_via_api")}>
+                  <Send className="h-3.5 w-3.5" />
+                  API Publish
+                </Button>
+              )}
               <Button
                 size="xs"
                 variant="outline"

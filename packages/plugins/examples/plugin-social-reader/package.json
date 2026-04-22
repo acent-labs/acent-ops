@@ -1,7 +1,7 @@
 {
   "name": "@paperclipai/plugin-social-reader",
   "version": "0.1.0",
-  "description": "Read-only social media analytics plugin for X (Twitter). Provides agent tools to check profiles, followers, tweets, and mentions.",
+  "description": "X (Twitter) connector plugin with OAuth 2.0 PKCE auth, posting, and read tools.",
   "type": "module",
   "private": true,
   "exports": {
