@@ -6,8 +6,18 @@ import {
   type PluginHealthDiagnostics,
   type ToolResult,
 } from "@paperclipai/plugin-sdk";
-import { DEFAULT_CONFIG, PLUGIN_ID, TOOL_NAMES } from "./constants.js";
-import { XApiClient, type XCredentials } from "./x-client.js";
+import { randomBytes } from "node:crypto";
+import { generateCodeVerifier } from "@xdevplatform/xdk";
+import { DEFAULT_CONFIG, PLUGIN_ID, TOOL_NAMES, X_OAUTH2_SCOPES } from "./constants.js";
+import {
+  XApiClient,
+  createOAuth2Auth,
+  normalizeOAuth2Token,
+  type XCredentials,
+  type XOAuth1Credentials,
+  type XOAuth2Credentials,
+  type XOAuth2Tokens,
+} from "./x-client.js";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -15,10 +25,15 @@ import { XApiClient, type XCredentials } from "./x-client.js";
 
 type SocialReaderConfig = {
   bearerTokenRef?: string;
+  clientIdRef?: string;
+  clientSecretRef?: string;
   consumerKeyRef?: string;
   consumerSecretRef?: string;
   accessTokenRef?: string;
   accessTokenSecretRef?: string;
+  oauth2AccessTokenRef?: string;
+  oauth2RefreshTokenRef?: string;
+  redirectUri?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -43,37 +58,106 @@ async function resolveValue(
   return value || undefined;
 }
 
-function hasOAuth1Credentials(creds: XCredentials): boolean {
-  return !!creds.consumerKey && !!creds.consumerSecret && !!creds.accessToken && !!creds.accessTokenSecret;
-}
-
-async function resolveCredentials(ctx: PluginContext): Promise<XCredentials> {
-  const config: SocialReaderConfig = {
+async function resolveConfig(ctx: PluginContext): Promise<SocialReaderConfig> {
+  return {
     ...DEFAULT_CONFIG,
     ...((await ctx.config.get()) as SocialReaderConfig),
   };
-  const creds: XCredentials = {
-    bearerToken: await resolveValue(ctx, config.bearerTokenRef, "TWITTER_BEARER_TOKEN"),
+}
+
+function hasOAuth1Credentials(creds: XCredentials): boolean {
+  return !!creds.oauth1;
+}
+
+async function resolveOAuth2Credentials(ctx: PluginContext): Promise<XOAuth2Credentials | null> {
+  const config = await resolveConfig(ctx);
+  const clientId = await resolveValue(ctx, config.clientIdRef, "X_CLIENT_ID");
+  if (!clientId) return null;
+  const clientSecret = await resolveValue(ctx, config.clientSecretRef, "X_CLIENT_SECRET");
+  return {
+    clientId,
+    clientSecret,
+    redirectUri: config.redirectUri || process.env.X_REDIRECT_URI || "http://127.0.0.1:3100/api/oauth/x/callback",
+    scope: [...X_OAUTH2_SCOPES],
+  };
+}
+
+async function resolveOAuth2Tokens(ctx: PluginContext): Promise<XOAuth2Tokens | null> {
+  const config = await resolveConfig(ctx);
+  try {
+    const stored = (await ctx.state.get({
+      scopeKind: "instance",
+      stateKey: "x_oauth2_tokens",
+    })) as XOAuth2Tokens | null;
+    if (stored?.accessToken) return stored;
+  } catch {
+    // fall through to env
+  }
+
+  const accessToken = await resolveValue(ctx, config.oauth2AccessTokenRef, "X_ACCESS_TOKEN");
+  if (!accessToken) return null;
+  const refreshToken = await resolveValue(ctx, config.oauth2RefreshTokenRef, "X_REFRESH_TOKEN");
+  return { accessToken, refreshToken };
+}
+
+async function persistOAuth2Tokens(ctx: PluginContext, tokens: XOAuth2Tokens): Promise<void> {
+  await ctx.state.set(
+    { scopeKind: "instance", stateKey: "x_oauth2_tokens" },
+    tokens,
+  );
+}
+
+async function resolveCredentials(ctx: PluginContext): Promise<XCredentials> {
+  const config = await resolveConfig(ctx);
+  const oauth1Candidate: Partial<XOAuth1Credentials> = {
     consumerKey: await resolveValue(ctx, config.consumerKeyRef, "TWITTER_CONSUMER_KEY"),
     consumerSecret: await resolveValue(ctx, config.consumerSecretRef, "TWITTER_CONSUMER_SECRET"),
     accessToken: await resolveValue(ctx, config.accessTokenRef, "TWITTER_ACCESS_TOKEN"),
     accessTokenSecret: await resolveValue(ctx, config.accessTokenSecretRef, "TWITTER_ACCESS_TOKEN_SECRET"),
   };
 
-  if (!creds.bearerToken && !hasOAuth1Credentials(creds)) {
-    throw new Error(
-      "Missing X credentials: configure TWITTER_BEARER_TOKEN for public read access, or configure the OAuth1 credential set " +
-        "(TWITTER_CONSUMER_KEY, TWITTER_CONSUMER_SECRET, TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_TOKEN_SECRET).",
-    );
-  }
+  const oauth1 = oauth1Candidate.consumerKey &&
+    oauth1Candidate.consumerSecret &&
+    oauth1Candidate.accessToken &&
+    oauth1Candidate.accessTokenSecret
+    ? oauth1Candidate as XOAuth1Credentials
+    : undefined;
 
-  return creds;
+  const oauth2Credentials = await resolveOAuth2Credentials(ctx);
+  const oauth2Tokens = await resolveOAuth2Tokens(ctx);
+
+  return {
+    bearerToken: await resolveValue(ctx, config.bearerTokenRef, "TWITTER_BEARER_TOKEN"),
+    oauth1,
+    oauth2: oauth2Credentials
+      ? {
+          credentials: oauth2Credentials,
+          tokens: oauth2Tokens,
+        }
+      : undefined,
+  };
 }
 
 async function getClient(ctx: PluginContext): Promise<XApiClient> {
   if (!xClient) {
     const creds = await resolveCredentials(ctx);
+    if (!creds.bearerToken && !hasOAuth1Credentials(creds) && !creds.oauth2?.tokens?.accessToken) {
+      if (creds.oauth2?.credentials) {
+        throw new Error(
+          "X not authenticated yet. Run x-auth-start, authorize the app, then call x-auth-callback with the returned code.",
+        );
+      }
+      throw new Error(
+        "Missing X credentials: configure TWITTER_BEARER_TOKEN, complete the OAuth 2.0 PKCE flow, or configure the OAuth1 credential set.",
+      );
+    }
     xClient = new XApiClient(creds);
+  }
+
+  const refreshed = await xClient.ensureValidToken();
+  if (refreshed) {
+    const tokens = xClient.getStoredOAuth2Tokens();
+    if (tokens?.accessToken) await persistOAuth2Tokens(ctx, tokens);
   }
   return xClient;
 }
@@ -83,7 +167,155 @@ async function getClient(ctx: PluginContext): Promise<XApiClient> {
 // ---------------------------------------------------------------------------
 
 async function registerTools(ctx: PluginContext): Promise<void> {
-  // 1. x-get-me
+  // 1. x-auth-start
+  ctx.tools.register(
+    TOOL_NAMES.xAuthStart,
+    {
+      displayName: "X Auth Start",
+      description: "Generate an X OAuth 2.0 PKCE authorization URL.",
+      parametersSchema: { type: "object", properties: {} },
+    },
+    async (): Promise<ToolResult> => {
+      const creds = await resolveOAuth2Credentials(ctx);
+      if (!creds) {
+        return {
+          error: "X OAuth 2.0 client credentials are missing. Configure X_CLIENT_ID (and optionally X_CLIENT_SECRET).",
+        };
+      }
+
+      const state = randomBytes(16).toString("hex");
+      const codeVerifier = generateCodeVerifier();
+      const auth = createOAuth2Auth(creds);
+      await auth.setPkceParameters(codeVerifier);
+      const authorizationUrl = await auth.getAuthorizationUrl(state);
+
+      await ctx.state.set(
+        { scopeKind: "instance", stateKey: "x_oauth_state" },
+        state,
+      );
+      await ctx.state.set(
+        { scopeKind: "instance", stateKey: "x_oauth_code_verifier" },
+        codeVerifier,
+      );
+
+      return {
+        content: JSON.stringify({
+          message: "Visit the following URL to authorize X access. After authorizing, copy the code from the callback page into x-auth-callback.",
+          authorizationUrl,
+          redirectUri: creds.redirectUri,
+          scopes: creds.scope,
+        }, null, 2),
+        data: { authorizationUrl, redirectUri: creds.redirectUri, scopes: creds.scope },
+      };
+    },
+  );
+
+  // 2. x-auth-callback
+  ctx.tools.register(
+    TOOL_NAMES.xAuthCallback,
+    {
+      displayName: "X Auth Callback",
+      description: "Exchange an X authorization code for access and refresh tokens.",
+      parametersSchema: {
+        type: "object",
+        properties: {
+          code: { type: "string" },
+          state: { type: "string" },
+        },
+        required: ["code"],
+      },
+    },
+    async (params): Promise<ToolResult> => {
+      const { code, state } = params as { code: string; state?: string };
+      if (!code) return { error: "code is required" };
+
+      const creds = await resolveOAuth2Credentials(ctx);
+      if (!creds) {
+        return {
+          error: "X OAuth 2.0 client credentials are missing. Configure X_CLIENT_ID (and optionally X_CLIENT_SECRET).",
+        };
+      }
+
+      let storedState: string | null = null;
+      let storedCodeVerifier: string | null = null;
+      try {
+        storedState = (await ctx.state.get({
+          scopeKind: "instance",
+          stateKey: "x_oauth_state",
+        })) as string | null;
+      } catch {
+        // ignore
+      }
+      try {
+        storedCodeVerifier = (await ctx.state.get({
+          scopeKind: "instance",
+          stateKey: "x_oauth_code_verifier",
+        })) as string | null;
+      } catch {
+        // ignore
+      }
+
+      if (state && storedState && state !== storedState) {
+        return { error: "OAuth state mismatch. Run x-auth-start again and retry the authorization flow." };
+      }
+
+      const auth = createOAuth2Auth(creds);
+      const token = await auth.exchangeCode(code, storedCodeVerifier ?? undefined);
+      const tokens = normalizeOAuth2Token(token);
+      await persistOAuth2Tokens(ctx, tokens);
+      xClient = null;
+
+      return {
+        content: JSON.stringify({
+          message: "X authorization successful. Access token stored.",
+          hasRefreshToken: !!tokens.refreshToken,
+          expiresAt: tokens.expiresAt ? new Date(tokens.expiresAt).toISOString() : "unknown",
+          scopes: token.scope ?? null,
+        }, null, 2),
+        data: {
+          success: true,
+          hasRefreshToken: !!tokens.refreshToken,
+          expiresAt: tokens.expiresAt,
+          scope: token.scope ?? null,
+        },
+      };
+    },
+  );
+
+  // 3. x-create-post
+  ctx.tools.register(
+    TOOL_NAMES.xCreatePost,
+    {
+      displayName: "X Create Post",
+      description: "Create a new text post on X.",
+      parametersSchema: {
+        type: "object",
+        properties: {
+          text: { type: "string" },
+        },
+        required: ["text"],
+      },
+    },
+    async (params): Promise<ToolResult> => {
+      const { text } = params as { text: string };
+      if (!text) return { error: "text is required" };
+      const client = await getClient(ctx);
+      const result = await client.createPost(text) as { data?: { id?: string; text?: string } };
+      const id = result?.data?.id ?? null;
+      const url = id ? `https://x.com/i/web/status/${id}` : null;
+      return {
+        content: JSON.stringify({
+          message: "Post created successfully on X.",
+          id,
+          text: result?.data?.text ?? text,
+          url,
+        }, null, 2),
+        data: { ...result, url },
+      };
+    },
+  );
+
+  // 4. x-get-me
   ctx.tools.register(
     TOOL_NAMES.xGetMe,
     {
@@ -98,7 +330,7 @@ async function registerTools(ctx: PluginContext): Promise<void> {
     },
   );
 
-  // 2. x-get-user-tweets
+  // 5. x-get-user-tweets
   ctx.tools.register(
     TOOL_NAMES.xGetUserTweets,
     {
@@ -120,7 +352,7 @@ async function registerTools(ctx: PluginContext): Promise<void> {
     },
   );
 
-  // 3. x-search
+  // 6. x-search
   ctx.tools.register(
     TOOL_NAMES.xSearch,
     {
@@ -144,7 +376,7 @@ async function registerTools(ctx: PluginContext): Promise<void> {
     },
   );
 
-  // 4. x-get-followers
+  // 7. x-get-followers
   ctx.tools.register(
     TOOL_NAMES.xGetFollowers,
     {
@@ -166,7 +398,7 @@ async function registerTools(ctx: PluginContext): Promise<void> {
     },
   );
 
-  // 5. x-get-mentions
+  // 8. x-get-mentions
   ctx.tools.register(
     TOOL_NAMES.xGetMentions,
     {
@@ -199,29 +431,32 @@ const plugin: PaperclipPlugin = definePlugin({
   },
 
   async onHealth(): Promise<PluginHealthDiagnostics> {
+    const hasEnvOAuth2Client = !!process.env.X_CLIENT_ID;
+    const hasEnvOAuth2Token = !!process.env.X_ACCESS_TOKEN;
     const hasEnvOAuth1Creds =
       !!process.env.TWITTER_CONSUMER_KEY &&
       !!process.env.TWITTER_CONSUMER_SECRET &&
       !!process.env.TWITTER_ACCESS_TOKEN &&
       !!process.env.TWITTER_ACCESS_TOKEN_SECRET;
     const hasEnvBearer = !!process.env.TWITTER_BEARER_TOKEN;
-    const hasEnvCreds = hasEnvBearer || hasEnvOAuth1Creds;
+    const hasEnvCreds = hasEnvBearer || hasEnvOAuth1Creds || hasEnvOAuth2Token;
     return {
       status: hasEnvCreds || xClient ? "ok" : "degraded",
       message: hasEnvCreds || xClient
-        ? "Social Reader plugin ready with XDK-backed credentials"
-        : "X credentials not configured — set TWITTER_BEARER_TOKEN or OAuth1 env vars/plugin secret refs",
+        ? "X connector ready with XDK-backed credentials"
+        : "X credentials not configured — set TWITTER_BEARER_TOKEN, complete OAuth 2.0 PKCE, or configure OAuth1 env vars/plugin secret refs",
       details: {
         pluginId: PLUGIN_ID,
         clientInitialized: !!xClient,
         envBearerDetected: hasEnvBearer,
+        envOAuth2ClientDetected: hasEnvOAuth2Client,
+        envOAuth2TokenDetected: hasEnvOAuth2Token,
         envOAuth1Detected: hasEnvOAuth1Creds,
       },
     };
   },
 
   async onConfigChanged() {
-    // Reset client so next call picks up new credentials
     xClient = null;
   },
 

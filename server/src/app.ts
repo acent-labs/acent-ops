@@ -35,6 +35,7 @@ import { pluginRoutes } from "./routes/plugins.js";
 import { adapterRoutes } from "./routes/adapters.js";
 import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
 import { oauthLinkedInRoutes } from "./routes/oauth-linkedin.js";
+import { oauthXRoutes } from "./routes/oauth-x.js";
 import { applyUiBranding } from "./ui-branding.js";
 import { logger } from "./middleware/logger.js";
 import { DEFAULT_LOCAL_PLUGIN_DIR, pluginLoader } from "./services/plugin-loader.js";
@@ -180,8 +181,10 @@ export async function createApp(
   api.use(agentRoutes(db));
   api.use(assetRoutes(db, opts.storageService));
   api.use(projectRoutes(db));
+  let pluginToolDispatcherRef: ReturnType<typeof createPluginToolDispatcher> | null = null;
   api.use(issueRoutes(db, opts.storageService, {
     feedbackExportService: opts.feedbackExportService,
+    getToolDispatcher: () => pluginToolDispatcherRef,
   }));
   api.use(routineRoutes(db));
   api.use(executionWorkspaceRoutes(db));
@@ -212,6 +215,7 @@ export async function createApp(
     lifecycleManager: lifecycle,
     db,
   });
+  pluginToolDispatcherRef = toolDispatcher;
   const jobCoordinator = createPluginJobCoordinator({
     db,
     lifecycle,
@@ -269,6 +273,7 @@ export async function createApp(
     }),
   );
   api.use(oauthLinkedInRoutes());
+  api.use(oauthXRoutes());
   app.use("/api", api);
   app.use("/api", (_req, res) => {
     res.status(404).json({ error: "API route not found" });

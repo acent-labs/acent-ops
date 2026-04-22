@@ -122,6 +122,7 @@ export type WorkProductSteeringAction =
   | "approve"
   | "request_changes"
   | "queue_for_publish"
+  | "publish_via_api"
   | "send_to_openclaw"
   | "mark_published"
   | "archive";

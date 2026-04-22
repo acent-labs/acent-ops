@@ -5,9 +5,9 @@ const manifest: PaperclipPluginManifestV1 = {
   id: PLUGIN_ID,
   apiVersion: 1,
   version: PLUGIN_VERSION,
-  displayName: "Social Reader",
+  displayName: "X Connector",
   description:
-    "Read-only social media analytics for X (Twitter). Agents can check profiles, follower counts, recent tweets, mentions, and search results without posting anything.",
+    "X (Twitter) connector with OAuth 2.0 PKCE and OAuth 1.0a compatibility. Agents can authorize, post, and inspect profiles, tweets, followers, mentions, and search results.",
   author: "Acent Labs",
   categories: ["connector", "automation"],
   capabilities: [
@@ -29,33 +29,109 @@ const manifest: PaperclipPluginManifestV1 = {
         description: "Paperclip secret reference for app-only read access. Falls back to TWITTER_BEARER_TOKEN env var if empty.",
         default: DEFAULT_CONFIG.bearerTokenRef,
       },
+      clientIdRef: {
+        type: "string",
+        title: "X OAuth 2.0 Client ID (secret ref)",
+        description: "Paperclip secret reference. Falls back to X_CLIENT_ID env var if empty.",
+        default: DEFAULT_CONFIG.clientIdRef,
+      },
+      clientSecretRef: {
+        type: "string",
+        title: "X OAuth 2.0 Client Secret (secret ref)",
+        description: "Paperclip secret reference. Falls back to X_CLIENT_SECRET env var if empty.",
+        default: DEFAULT_CONFIG.clientSecretRef,
+      },
       consumerKeyRef: {
         type: "string",
-        title: "X Consumer Key (secret ref)",
+        title: "X OAuth 1.0a Consumer Key (secret ref)",
         description: "Paperclip secret reference. Falls back to TWITTER_CONSUMER_KEY env var if empty.",
         default: DEFAULT_CONFIG.consumerKeyRef,
       },
       consumerSecretRef: {
         type: "string",
-        title: "X Consumer Secret (secret ref)",
+        title: "X OAuth 1.0a Consumer Secret (secret ref)",
         description: "Paperclip secret reference. Falls back to TWITTER_CONSUMER_SECRET env var if empty.",
         default: DEFAULT_CONFIG.consumerSecretRef,
       },
       accessTokenRef: {
         type: "string",
-        title: "X Access Token (secret ref)",
+        title: "X OAuth 1.0a Access Token (secret ref)",
         description: "Paperclip secret reference. Falls back to TWITTER_ACCESS_TOKEN env var if empty.",
         default: DEFAULT_CONFIG.accessTokenRef,
       },
       accessTokenSecretRef: {
         type: "string",
-        title: "X Access Token Secret (secret ref)",
+        title: "X OAuth 1.0a Access Token Secret (secret ref)",
         description: "Paperclip secret reference. Falls back to TWITTER_ACCESS_TOKEN_SECRET env var if empty.",
         default: DEFAULT_CONFIG.accessTokenSecretRef,
+      },
+      oauth2AccessTokenRef: {
+        type: "string",
+        title: "X OAuth 2.0 Access Token (secret ref)",
+        description: "Paperclip secret reference. Falls back to X_ACCESS_TOKEN env var if empty.",
+        default: DEFAULT_CONFIG.oauth2AccessTokenRef,
+      },
+      oauth2RefreshTokenRef: {
+        type: "string",
+        title: "X OAuth 2.0 Refresh Token (secret ref)",
+        description: "Paperclip secret reference. Falls back to X_REFRESH_TOKEN env var if empty.",
+        default: DEFAULT_CONFIG.oauth2RefreshTokenRef,
+      },
+      redirectUri: {
+        type: "string",
+        title: "OAuth Redirect URI",
+        description: "OAuth 2.0 redirect URI. Falls back to X_REDIRECT_URI env var if empty.",
+        default: DEFAULT_CONFIG.redirectUri,
       },
     },
   },
   tools: [
+    {
+      name: TOOL_NAMES.xAuthStart,
+      displayName: "X Auth Start",
+      description:
+        "Generate an X OAuth 2.0 PKCE authorization URL. Visit it, authorize the app, then send the callback code to x-auth-callback.",
+      parametersSchema: {
+        type: "object",
+        properties: {},
+      },
+    },
+    {
+      name: TOOL_NAMES.xAuthCallback,
+      displayName: "X Auth Callback",
+      description:
+        "Exchange an X OAuth 2.0 authorization code for access and refresh tokens.",
+      parametersSchema: {
+        type: "object",
+        properties: {
+          code: {
+            type: "string",
+            description: "The authorization code from the X OAuth callback.",
+          },
+          state: {
+            type: "string",
+            description: "Optional state value from the X OAuth callback.",
+          },
+        },
+        required: ["code"],
+      },
+    },
+    {
+      name: TOOL_NAMES.xCreatePost,
+      displayName: "X Create Post",
+      description:
+        "Create a new text post on X for the authenticated user.",
+      parametersSchema: {
+        type: "object",
+        properties: {
+          text: {
+            type: "string",
+            description: "The post text to publish.",
+          },
+        },
+        required: ["text"],
+      },
+    },
     {
       name: TOOL_NAMES.xGetMe,
       displayName: "X Get My Profile",

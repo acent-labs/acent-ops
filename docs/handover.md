@@ -108,8 +108,8 @@ ACENT's operator-facing review layer is Command Center.
   evidence after Paperclip assigns it an action issue.
 - Founder/board review should happen from Command Center whenever possible:
   Review Inbox for approvals, Deliverables for all outputs, Publish Queue for
-  approved items awaiting external action, and Action Evidence for OpenClaw
-  results.
+  approved items awaiting API or external action, and Action Evidence for
+  OpenClaw or direct publish results.
 - Comments remain useful for steering, discussion, short status, and handoff,
   but they are not the canonical home for deliverables.
 

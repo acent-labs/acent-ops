@@ -41,7 +41,7 @@ function titleForTab(tab: CommandCenterTab) {
 
 function descriptionForTab(tab: CommandCenterTab) {
   if (tab === "review") return "산출물 중 대표 검토가 필요한 것만 모아봅니다.";
-  if (tab === "publish") return "승인 후 OpenClaw 또는 외부 반영을 기다리는 산출물입니다.";
+  if (tab === "publish") return "승인 후 API 발행 또는 OpenClaw 반영을 기다리는 산출물입니다.";
   if (tab === "evidence") return "OpenClaw 실행 결과, 게시 URL, 스크린샷 같은 증거 산출물입니다.";
   return "Paperclip과 외부 실행 시스템이 등록한 전체 산출물입니다.";
 }
