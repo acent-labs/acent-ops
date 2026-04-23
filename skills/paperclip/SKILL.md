@@ -117,6 +117,15 @@ When writing issue descriptions or comments, follow the ticket-linking rule in *
 - Use `reviewState: "needs_board_review"` when a human decision is required.
 - Use `isPrimary: true` for the single deliverable the board should inspect first.
 - Use `metadata.deliverableKind`, `metadata.channel`, `metadata.documentKey`, `metadata.sourceSystem`, and `metadata.reviewRequest` to make the deliverable discoverable in Command Center.
+- In this ACENT checkout, social defaults are channel-specific:
+  - X: register the post-ready final draft with `metadata.channel = "x"` and `metadata.reviewRequest = "publish"` so board approval can publish it directly through the X API path.
+    The linked issue document should contain only the final publish-ready post text and optional hashtag line; keep review notes, rationale, and memo sections in comments or summaries instead of the document body.
+  - LinkedIn: register a posting-ready final draft with `metadata.channel = "linkedin"` and a normal review request; do not assume automatic publish or action handoff unless the founder explicitly asks for it.
+- In the ACENT daily content routine, topic selection is trend-first:
+  start with `last30days` in `X + official web sources` mode, then add
+  same-day official sources when needed.
+  Do not force every draft to anchor on AX Business. The stronger default is
+  "latest meaningful AI/LLM signal first, optional ACENT interpretation second."
 - Leave only a short comment saying what was registered, where to find it, and what decision is needed.
 
 Comments are for discussion, steering, status, and concise handoff. Work products are the canonical place for deliverables.

@@ -180,7 +180,7 @@ This section is the API contract for Command Center review, publish queue, and O
 GET /api/companies/{companyId}/deliverables
 ```
 
-Optional filters: `status`, `reviewState`, `projectId`, `provider`, `kind`, `channel`, `limit`.
+Optional filters: `status`, `reviewState`, `projectId`, `provider`, `kind`, `channel`, `limit`, `offset`.
 
 ### Issue Roll-up
 
@@ -189,6 +189,7 @@ GET /api/issues/{issueId}/deliverables?includeDescendants=true
 ```
 
 When `includeDescendants=true`, the response includes work products registered on child issues so parent issues can serve as a review surface.
+The same deliverable filters are supported here, including `limit` and `offset`.
 
 ### Steering
 
@@ -203,6 +204,8 @@ POST /api/work-products/{workProductId}/steering
 Supported actions: `comment`, `approve`, `request_changes`, `queue_for_publish`, `publish_via_api`, `send_to_openclaw`, `mark_published`, `archive`.
 
 `publish_via_api` currently supports direct publish for channel `x`. The host executes the configured X plugin tool, marks the source deliverable as `published`, and registers an `action_evidence` work product with the resulting URL when available.
+
+For X deliverables registered with `metadata.channel = "x"` and `metadata.reviewRequest = "publish"`, `approve` acts as an approve-and-publish step: board approval publishes through the X API immediately instead of waiting in the publish queue.
 
 ## Attachments
 

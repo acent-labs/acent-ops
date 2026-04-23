@@ -28,6 +28,12 @@ type DeliverablesPanelProps = {
   openClawAgents?: Agent[];
   onSteer?: (workProductId: string, data: WorkProductSteeringRequest) => Promise<void>;
   compact?: boolean;
+  pagination?: {
+    currentPage: number;
+    pageSize: number;
+    hasNextPage: boolean;
+    onPageChange: (nextPage: number) => void;
+  };
 };
 
 type SteeringDraft = {
@@ -100,6 +106,15 @@ function statusVariant(status: string) {
 function canPublishViaApi(item: DeliverableListItem) {
   const meta = metadataFor(item);
   return meta.channel === "x" && item.workProduct.status === "queued_for_publish";
+}
+
+function shouldPublishOnApproval(item: DeliverableListItem) {
+  const meta = metadataFor(item);
+  return meta.channel === "x" && meta.reviewRequest === "publish" && item.workProduct.status !== "published";
+}
+
+function approveActionLabel(item: DeliverableListItem) {
+  return shouldPublishOnApproval(item) ? "Approve & Publish" : actionLabels.approve;
 }
 
 function DeliverableCard({
@@ -179,7 +194,7 @@ function DeliverableCard({
             <>
               <Button size="xs" onClick={() => onAction(item, "approve")}>
                 <ShieldCheck className="h-3.5 w-3.5" />
-                Approve
+                {approveActionLabel(item)}
               </Button>
               <Button size="xs" variant="outline" onClick={() => onAction(item, "request_changes")}>
                 Request changes
@@ -188,10 +203,12 @@ function DeliverableCard({
                 <MessageSquare className="h-3.5 w-3.5" />
                 Ask
               </Button>
-              <Button size="xs" variant="outline" onClick={() => onAction(item, "queue_for_publish")}>
-                <UploadCloud className="h-3.5 w-3.5" />
-                Queue
-              </Button>
+              {!shouldPublishOnApproval(item) && (
+                <Button size="xs" variant="outline" onClick={() => onAction(item, "queue_for_publish")}>
+                  <UploadCloud className="h-3.5 w-3.5" />
+                  Queue
+                </Button>
+              )}
               {canPublishViaApi(item) && (
                 <Button size="xs" onClick={() => onAction(item, "publish_via_api")}>
                   <Send className="h-3.5 w-3.5" />
@@ -227,6 +244,7 @@ export function DeliverablesPanel({
   openClawAgents = [],
   onSteer,
   compact,
+  pagination,
 }: DeliverablesPanelProps) {
   const [steeringDraft, setSteeringDraft] = useState<SteeringDraft | null>(null);
   const [comment, setComment] = useState("");
@@ -241,6 +259,8 @@ export function DeliverablesPanel({
     }),
     [items],
   );
+  const visibleStart = pagination ? (pagination.currentPage - 1) * pagination.pageSize + 1 : 1;
+  const visibleEnd = pagination ? visibleStart + Math.max(sortedItems.length - 1, 0) : sortedItems.length;
 
   function openSteering(item: DeliverableListItem, action: WorkProductSteeringAction) {
     const meta = metadataFor(item);
@@ -266,6 +286,37 @@ export function DeliverablesPanel({
     }
   }
 
+  function renderPaginationControls() {
+    if (!pagination || sortedItems.length === 0) return null;
+
+    return (
+      <div className="flex flex-col gap-2 border border-border bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs text-muted-foreground">
+          Showing {visibleStart}-{visibleEnd}
+        </p>
+        <div className="flex items-center gap-2">
+          <Button
+            size="xs"
+            variant="outline"
+            onClick={() => pagination.onPageChange(pagination.currentPage - 1)}
+            disabled={pagination.currentPage <= 1}
+          >
+            Previous
+          </Button>
+          <span className="text-xs text-muted-foreground">Page {pagination.currentPage}</span>
+          <Button
+            size="xs"
+            variant="outline"
+            onClick={() => pagination.onPageChange(pagination.currentPage + 1)}
+            disabled={!pagination.hasNextPage}
+          >
+            Next
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
       <div className="space-y-3">
@@ -277,6 +328,8 @@ export function DeliverablesPanel({
 
   return (
     <>
+      {renderPaginationControls()}
+
       {sortedItems.length === 0 ? (
         <div className="border border-border bg-card p-4 text-sm text-muted-foreground">{emptyMessage}</div>
       ) : (
@@ -293,10 +346,18 @@ export function DeliverablesPanel({
         </div>
       )}
 
+      {renderPaginationControls()}
+
       <Dialog open={Boolean(steeringDraft)} onOpenChange={(open) => !open && setSteeringDraft(null)}>
-        <DialogContent>
+          <DialogContent>
           <DialogHeader>
-            <DialogTitle>{steeringDraft ? actionLabels[steeringDraft.action] : "Steer deliverable"}</DialogTitle>
+            <DialogTitle>
+              {steeringDraft
+                ? steeringDraft.action === "approve"
+                  ? approveActionLabel(steeringDraft.item)
+                  : actionLabels[steeringDraft.action]
+                : "Steer deliverable"}
+            </DialogTitle>
             <DialogDescription>
               {steeringDraft?.item.workProduct.title ?? "Update this deliverable and keep the source issue traceable."}
             </DialogDescription>
@@ -308,7 +369,7 @@ export function DeliverablesPanel({
               <select
                 value={channel}
                 onChange={(event) => setChannel(event.target.value)}
-                className="h-9 border border-input bg-background px-2 text-sm"
+                className="h-9 cursor-pointer border border-input bg-background px-2 text-sm"
               >
                 <option value="">Keep existing</option>
                 <option value="x">X</option>
@@ -326,7 +387,7 @@ export function DeliverablesPanel({
               <select
                 value={openClawAgentId}
                 onChange={(event) => setOpenClawAgentId(event.target.value)}
-                className="h-9 border border-input bg-background px-2 text-sm"
+                className="h-9 cursor-pointer border border-input bg-background px-2 text-sm"
               >
                 <option value="">Select OpenClaw agent</option>
                 {openClawAgents.map((agent) => (

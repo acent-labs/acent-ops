@@ -223,6 +223,26 @@ describe("issue deliverable routes", () => {
       kind: "briefing",
       channel: "x",
       limit: 25,
+      offset: 0,
+    });
+  });
+
+  it("passes deliverable offset through for company pagination", async () => {
+    const app = await createApp();
+
+    await request(app)
+      .get("/api/companies/company-1/deliverables?limit=6&offset=12")
+      .expect(200);
+
+    expect(mockWorkProductService.listForCompanyDeliverables).toHaveBeenCalledWith("company-1", {
+      status: undefined,
+      reviewState: undefined,
+      projectId: undefined,
+      provider: undefined,
+      kind: undefined,
+      channel: undefined,
+      limit: 6,
+      offset: 12,
     });
   });
 
@@ -235,7 +255,7 @@ describe("issue deliverable routes", () => {
 
     expect(mockWorkProductService.listDeliverablesForIssue).toHaveBeenCalledWith(sourceIssue.id, {
       includeDescendants: true,
-      filters: expect.objectContaining({ limit: 100 }),
+      filters: expect.objectContaining({ limit: 100, offset: 0 }),
     });
     expect(res.body[0].workProduct.id).toBe(workProduct.id);
   });
@@ -257,6 +277,78 @@ describe("issue deliverable routes", () => {
       "Approved for publish queue.",
       expect.objectContaining({ userId: "local-board" }),
     );
+  });
+
+  it("approves and immediately publishes X deliverables marked for publish review", async () => {
+    const app = await createApp();
+    mockWorkProductService.getById.mockResolvedValue({
+      ...workProduct,
+      metadata: {
+        deliverableKind: "social_post",
+        documentKey: "briefing",
+        channel: "x",
+        reviewRequest: "publish",
+        sourceSystem: "paperclip",
+      },
+    });
+    mockDocumentService.getIssueDocumentByKey.mockResolvedValue({
+      key: "briefing",
+      body: `# ACE-202 X 최종안
+
+### X 최종안 (founder approval -> API publish ready)
+모델은 데모를 만들고, 거버넌스는 운영을 만든다. 내가 보기엔 AI 에이전트의 moat는 성능보다 거버넌스에서 생긴다. 배포는 누구나 한다. 승인 게이트, 감사 로그, 권한 경계가 없으면 거기서 멈춘다. 85%가 시도해도 5%만 스케일하는 이유다.
+
+해시태그: #AIAgents #EnterpriseAI
+
+## 메모
+- 형식: single tweet
+- 본문+해시태그 총 길이: 162자
+- 단일 publish candidate만 제출`,
+    });
+    mockWorkProductService.update.mockResolvedValue({
+      ...workProduct,
+      status: "published",
+      reviewState: "approved",
+      url: "https://x.com/i/web/status/2046425694436249985",
+      externalId: "2046425694436249985",
+      metadata: {
+        deliverableKind: "social_post",
+        documentKey: "briefing",
+        channel: "x",
+        reviewRequest: "publish",
+        sourceSystem: "paperclip",
+        evidenceUrl: "https://x.com/i/web/status/2046425694436249985",
+      },
+    });
+
+    const res = await request(app)
+      .post(`/api/work-products/${workProduct.id}/steering`)
+      .send({ action: "approve" })
+      .expect(200);
+
+    expect(mockToolDispatcher.executeTool).toHaveBeenCalledWith(
+      "paperclip-social-reader:x-create-post",
+      {
+        text: "모델은 데모를 만들고, 거버넌스는 운영을 만든다. 내가 보기엔 AI 에이전트의 moat는 성능보다 거버넌스에서 생긴다. 배포는 누구나 한다. 승인 게이트, 감사 로그, 권한 경계가 없으면 거기서 멈춘다. 85%가 시도해도 5%만 스케일하는 이유다.\n\n#AIAgents #EnterpriseAI",
+      },
+      expect.objectContaining({
+        companyId: "company-1",
+        projectId: sourceIssue.projectId,
+      }),
+    );
+    expect(mockWorkProductService.update).toHaveBeenCalledWith(workProduct.id, expect.objectContaining({
+      status: "published",
+      reviewState: "approved",
+      externalId: "2046425694436249985",
+      url: "https://x.com/i/web/status/2046425694436249985",
+    }));
+    expect(mockIssueService.addComment).toHaveBeenCalledWith(
+      sourceIssue.id,
+      "Approved and published deliverable to X via API: https://x.com/i/web/status/2046425694436249985",
+      expect.objectContaining({ userId: "local-board" }),
+    );
+    expect(res.body.workProduct.status).toBe("published");
+    expect(res.body.evidenceWorkProduct.metadata.deliverableKind).toBe("action_evidence");
   });
 
   it("requires an OpenClaw agent before creating an execution issue", async () => {

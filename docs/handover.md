@@ -87,7 +87,15 @@ should own a task.
 Practical examples:
 
 - Homepage copy, sales deck copy, X/LinkedIn drafts: Paperclip Content Director
-  and writers own the work; OpenClaw may publish or visually verify outputs.
+  and writers own the work.
+- X publication uses the Paperclip review/publish flow by default: the content
+  team prepares the final approved copy, Command Center handles approval and
+  publish queue, and the X API path performs the actual post.
+- LinkedIn stays draft-first by default: the content team brings back a
+  posting-ready final draft, but does not create an automatic publish action
+  unless the founder explicitly asks for LinkedIn posting or UI execution.
+- OpenClaw is optional for browser verification, screenshots, or explicit
+  LinkedIn/UI actions; it is not the default X posting path.
 - Product code, AX delivery code, integration fixes: CTO/engineering directors
   and Codex/Claude workers own the work; OpenClaw may run browser checks.
 - Monday CRM updates, lead/deal hygiene, revenue reports: CRO/Hermes RevOps owns
@@ -129,6 +137,25 @@ CMO/Content rule:
 - CMO marks the primary deliverable when multiple outputs exist.
 - Content Director and writers may register contributor deliverables or documents,
   but anything the founder must decide on should surface in Command Center.
+- The daily content routine is trend-first. Start with `last30days` in its
+  narrowed `X + official web sources` mode, then supplement with same-day
+  official release posts, model cards, blog posts, research notes, or launch
+  threads when a fresh AI/LLM signal matters.
+- Do not force every content item to start from ACENT or AX Business. Freshness
+  and signal strength can outweigh direct business relevance when choosing the
+  day's topic.
+- A practical ACENT or operator take is welcome, but it is a secondary
+  interpretation layer, not a mandatory ending for every X or LinkedIn draft.
+- For X, the default final deliverable is a post-ready draft registered for
+  Command Center with `channel = x` and a publish-oriented review request, so
+  founder/board approval publishes it directly through the X API path.
+  The linked X document body should contain only the publish-ready post text
+  plus any final hashtag line. Keep notes, rationale, and approval memos in the
+  deliverable summary or issue comment, not in the document body that will be
+  published.
+- For LinkedIn, the default final deliverable is a posting-ready draft
+  registered for review with `channel = linkedin`; stop there unless the
+  founder explicitly asks for posting execution.
 - OpenClaw should receive execution work through a Paperclip issue, not an
   out-of-band instruction, so its result can return as Action Evidence.
 

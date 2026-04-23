@@ -23,7 +23,10 @@ type DeliverableFilters = {
   kind?: string;
   channel?: string;
   limit: number;
+  offset?: number;
 };
+
+const DELIVERABLES_PAGE_SIZE = 6;
 
 const tabFilters: Record<CommandCenterTab, Partial<DeliverableFilters>> = {
   review: { reviewState: "needs_board_review" },
@@ -58,6 +61,7 @@ export function CommandCenter() {
   );
   const [kind, setKind] = useState("");
   const [channel, setChannel] = useState("");
+  const [deliverablesPage, setDeliverablesPage] = useState(1);
 
   function setTab(next: CommandCenterTab) {
     setTabState(next);
@@ -72,12 +76,17 @@ export function CommandCenter() {
     setBreadcrumbs([{ label: "Command Center" }]);
   }, [setBreadcrumbs]);
 
+  useEffect(() => {
+    setDeliverablesPage(1);
+  }, [channel, kind, selectedCompanyId, tab]);
+
   const filters = useMemo<DeliverableFilters>(() => ({
     ...tabFilters[tab],
     ...(kind ? { kind } : {}),
     ...(channel ? { channel } : {}),
-    limit: 100,
-  }), [channel, kind, tab]);
+    limit: tab === "deliverables" ? DELIVERABLES_PAGE_SIZE + 1 : 100,
+    ...(tab === "deliverables" ? { offset: (deliverablesPage - 1) * DELIVERABLES_PAGE_SIZE } : {}),
+  }), [channel, deliverablesPage, kind, tab]);
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -99,6 +108,17 @@ export function CommandCenter() {
     queryFn: () => issuesApi.listCompanyDeliverables(selectedCompanyId!, filters),
     enabled: !!selectedCompanyId,
   });
+  const visibleDeliverables = useMemo(
+    () => tab === "deliverables" ? (deliverables ?? []).slice(0, DELIVERABLES_PAGE_SIZE) : (deliverables ?? []),
+    [deliverables, tab],
+  );
+  const deliverablesHasNextPage = tab === "deliverables" && (deliverables?.length ?? 0) > DELIVERABLES_PAGE_SIZE;
+
+  useEffect(() => {
+    if (tab !== "deliverables" || isLoading || deliverablesPage <= 1) return;
+    if ((deliverables?.length ?? 0) > 0) return;
+    setDeliverablesPage((current) => Math.max(1, current - 1));
+  }, [deliverables?.length, deliverablesPage, isLoading, tab]);
 
   const steer = useMutation({
     mutationFn: ({ workProductId, data }: { workProductId: string; data: WorkProductSteeringRequest }) =>
@@ -186,7 +206,7 @@ export function CommandCenter() {
             <select
               value={kind}
               onChange={(event) => setKind(event.target.value)}
-              className="h-8 min-w-36 border border-input bg-background px-2 text-sm text-foreground"
+              className="h-8 min-w-36 cursor-pointer border border-input bg-background px-2 text-sm text-foreground"
             >
               <option value="">All</option>
               <option value="briefing">Briefing</option>
@@ -202,7 +222,7 @@ export function CommandCenter() {
             <select
               value={channel}
               onChange={(event) => setChannel(event.target.value)}
-              className="h-8 min-w-32 border border-input bg-background px-2 text-sm text-foreground"
+              className="h-8 min-w-32 cursor-pointer border border-input bg-background px-2 text-sm text-foreground"
             >
               <option value="">All</option>
               <option value="x">X</option>
@@ -220,10 +240,18 @@ export function CommandCenter() {
               <PageSkeleton variant="list" />
             ) : (
               <DeliverablesPanel
-                items={deliverables ?? []}
+                items={value === "deliverables" ? visibleDeliverables : (deliverables ?? [])}
                 openClawAgents={openClawAgents}
                 emptyMessage={`No ${titleForTab(value).toLowerCase()} items.`}
                 onSteer={(workProductId, data) => steer.mutateAsync({ workProductId, data }).then(() => undefined)}
+                pagination={value === "deliverables"
+                  ? {
+                    currentPage: deliverablesPage,
+                    pageSize: DELIVERABLES_PAGE_SIZE,
+                    hasNextPage: deliverablesHasNextPage,
+                    onPageChange: setDeliverablesPage,
+                  }
+                  : undefined}
               />
             )}
           </TabsContent>
