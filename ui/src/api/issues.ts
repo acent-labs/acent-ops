@@ -173,6 +173,7 @@ export const issuesApi = {
       kind?: string;
       channel?: string;
       limit?: number;
+      offset?: number;
     },
   ) => {
     const params = new URLSearchParams();
@@ -183,6 +184,7 @@ export const issuesApi = {
     if (filters?.kind) params.set("kind", filters.kind);
     if (filters?.channel) params.set("channel", filters.channel);
     if (filters?.limit) params.set("limit", String(filters.limit));
+    if (filters?.offset) params.set("offset", String(filters.offset));
     const qs = params.toString();
     return api.get<DeliverableListItem[]>(`/companies/${companyId}/deliverables${qs ? `?${qs}` : ""}`);
   },
@@ -197,6 +199,7 @@ export const issuesApi = {
       kind?: string;
       channel?: string;
       limit?: number;
+      offset?: number;
     },
   ) => {
     const params = new URLSearchParams();
@@ -208,6 +211,7 @@ export const issuesApi = {
     if (filters?.kind) params.set("kind", filters.kind);
     if (filters?.channel) params.set("channel", filters.channel);
     if (filters?.limit) params.set("limit", String(filters.limit));
+    if (filters?.offset) params.set("offset", String(filters.offset));
     const qs = params.toString();
     return api.get<DeliverableListItem[]>(`/issues/${id}/deliverables${qs ? `?${qs}` : ""}`);
   },

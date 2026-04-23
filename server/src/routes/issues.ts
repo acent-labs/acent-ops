@@ -340,6 +340,14 @@ export function issueRoutes(
     return Math.min(parsed, maxValue);
   }
 
+  function parseNonNegativeOffsetQuery(value: unknown) {
+    if (value === undefined || value === null || value === "") return 0;
+    if (typeof value !== "string") throw new HttpError(400, "offset must be a non-negative integer");
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isInteger(parsed) || parsed < 0) throw new HttpError(400, "offset must be a non-negative integer");
+    return parsed;
+  }
+
   function parseDeliverableFilters(req: Request) {
     return {
       status: req.query.status as string | undefined,
@@ -349,7 +357,78 @@ export function issueRoutes(
       kind: req.query.kind as string | undefined,
       channel: req.query.channel as string | undefined,
       limit: parsePositiveLimitQuery(req.query.limit),
+      offset: parseNonNegativeOffsetQuery(req.query.offset),
     };
+  }
+
+  function stripMarkdownFrontmatter(markdown: string) {
+    const normalized = markdown.replace(/\r\n/g, "\n");
+    if (!normalized.startsWith("---\n")) return normalized.trim();
+    const closing = normalized.indexOf("\n---\n", 4);
+    if (closing < 0) return normalized.trim();
+    return normalized.slice(closing + 5).trim();
+  }
+
+  function extractFirstFencedCodeBlock(markdown: string) {
+    const match = markdown.match(/```(?:[\w-]+)?\n([\s\S]*?)\n```/);
+    return match?.[1]?.trim() ?? "";
+  }
+
+  function stripInlineMarkdown(line: string) {
+    return line
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1")
+      .replace(/`([^`]+)`/g, "$1")
+      .replace(/\*\*([^*]+)\*\*/g, "$1")
+      .replace(/__([^_]+)__/g, "$1")
+      .replace(/\*([^*]+)\*/g, "$1")
+      .replace(/_([^_]+)_/g, "$1");
+  }
+
+  function extractXPublishTextFromDocument(markdown: string) {
+    const normalized = stripMarkdownFrontmatter(markdown).trim();
+    if (!normalized) return "";
+
+    const candidate = extractFirstFencedCodeBlock(normalized) || normalized;
+    const lines = candidate.split("\n");
+    const extracted: string[] = [];
+    let sawBodyContent = false;
+
+    for (const rawLine of lines) {
+      const trimmed = rawLine.trim();
+      if (!trimmed) {
+        if (sawBodyContent && extracted.at(-1) !== "") extracted.push("");
+        continue;
+      }
+
+      if (/^(출처 베이스|출처|결정 필요|문서 키)\s*:/i.test(trimmed) && sawBodyContent) {
+        break;
+      }
+      if (/^#{1,6}\s+/.test(trimmed)) {
+        if (sawBodyContent) break;
+        continue;
+      }
+      if (/^```/.test(trimmed)) {
+        continue;
+      }
+
+      let line = rawLine.trim();
+      if (/^(해시태그|hashtags?)\s*:/i.test(line)) {
+        line = line.replace(/^(해시태그|hashtags?)\s*:\s*/i, "");
+      } else {
+        line = line.replace(/^\s*>\s?/, "");
+        line = line.replace(/^\s*[-*]\s+/, "• ");
+      }
+
+      line = stripInlineMarkdown(line).trim();
+      if (!line) continue;
+      extracted.push(line);
+      sawBodyContent = true;
+    }
+
+    while (extracted[0] === "") extracted.shift();
+    while (extracted.at(-1) === "") extracted.pop();
+
+    return extracted.join("\n").replace(/\n{3,}/g, "\n\n").trim();
   }
 
   function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -1163,54 +1242,194 @@ export function issueRoutes(
       res.status(404).json({ error: "Issue not found" });
       return;
     }
+    const workProduct = existing;
+    const issue = sourceIssue;
 
     const actor = getActorInfo(req);
     const addSteeringComment = async (body: string) => {
-      const comment = await svc.addComment(sourceIssue.id, body, {
+      const comment = await svc.addComment(issue.id, body, {
         agentId: actor.agentId ?? undefined,
         userId: actor.actorType === "user" ? actor.actorId : undefined,
         runId: actor.runId,
       });
       await logActivity(db, {
-        companyId: sourceIssue.companyId,
+        companyId: issue.companyId,
         actorType: actor.actorType,
         actorId: actor.actorId,
         agentId: actor.agentId,
         runId: actor.runId,
         action: "issue.comment_added",
         entityType: "issue",
-        entityId: sourceIssue.id,
+        entityId: issue.id,
         details: {
           commentId: comment.id,
           bodySnippet: comment.body.slice(0, 120),
-          identifier: sourceIssue.identifier,
-          issueTitle: sourceIssue.title,
+          identifier: issue.identifier,
+          issueTitle: issue.title,
           source: "work_product_steering",
-          workProductId: existing.id,
+          workProductId: workProduct.id,
         },
       });
       return comment;
     };
 
     const updateProduct = async (patch: Parameters<typeof workProductsSvc.update>[1]) => {
-      const product = await workProductsSvc.update(existing.id, patch);
+      const product = await workProductsSvc.update(workProduct.id, patch);
       if (!product) throw notFound("Work product not found");
       await logActivity(db, {
-        companyId: existing.companyId,
+        companyId: workProduct.companyId,
         actorType: actor.actorType,
         actorId: actor.actorId,
         agentId: actor.agentId,
         runId: actor.runId,
         action: "issue.work_product_updated",
         entityType: "issue",
-        entityId: existing.issueId,
-        details: { workProductId: existing.id, changedKeys: Object.keys(patch).sort(), source: "steering" },
+        entityId: workProduct.issueId,
+        details: { workProductId: workProduct.id, changedKeys: Object.keys(patch).sort(), source: "steering" },
       });
       return product;
     };
 
-    const currentMetadata = isPlainRecord(existing.metadata) ? existing.metadata : {};
+    const currentMetadata = isPlainRecord(workProduct.metadata) ? workProduct.metadata : {};
     const commentText = typeof req.body.comment === "string" ? req.body.comment.trim() : "";
+    const metadataChannel = typeof currentMetadata.channel === "string" ? currentMetadata.channel : undefined;
+    const reviewRequest = typeof currentMetadata.reviewRequest === "string" ? currentMetadata.reviewRequest : undefined;
+
+    function shouldPublishXOnApproval(channel: string | undefined) {
+      return channel === "x" && reviewRequest === "publish" && workProduct.status !== "published";
+    }
+
+    async function publishDeliverableViaApi(params?: {
+      approvedByBoard?: boolean;
+      commentOverride?: string;
+    }) {
+      const channel = req.body.channel ?? metadataChannel;
+      if (channel !== "x") {
+        throw new HttpError(422, 'Direct API publish currently supports only channel "x"');
+      }
+
+      const toolDispatcher = opts?.getToolDispatcher?.() ?? null;
+      if (!toolDispatcher || !toolDispatcher.getTool(X_API_PUBLISH_TOOL)) {
+        throw new HttpError(422, "X API publisher is not available");
+      }
+
+      const projectId = issue.projectId ?? workProduct.projectId;
+      if (!projectId) {
+        throw new HttpError(422, "Project context required for API publish");
+      }
+
+      let publishText = "";
+      const documentKey = typeof currentMetadata.documentKey === "string" ? currentMetadata.documentKey.trim() : "";
+      if (documentKey) {
+        const document = await documentsSvc.getIssueDocumentByKey(issue.id, documentKey);
+        publishText = document?.body ? extractXPublishTextFromDocument(document.body) : "";
+      }
+      if (!publishText) publishText = workProduct.summary?.trim() ?? "";
+      if (!publishText) publishText = workProduct.title.trim();
+      if (!publishText) {
+        throw new HttpError(422, "Deliverable has no publishable text");
+      }
+
+      let publishResult: Awaited<ReturnType<PluginToolDispatcher["executeTool"]>>;
+      try {
+        publishResult = await toolDispatcher.executeTool(
+          X_API_PUBLISH_TOOL,
+          { text: publishText },
+          {
+            agentId: actor.agentId ?? issue.assigneeAgentId ?? SYSTEM_TOOL_RUN_AGENT_ID,
+            runId: actor.runId ?? randomUUID(),
+            companyId: workProduct.companyId,
+            projectId,
+          },
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes("not running") || message.includes("worker")) {
+          throw new HttpError(502, message);
+        }
+        throw new HttpError(500, message);
+      }
+
+      if (publishResult.result.error) {
+        throw new HttpError(422, publishResult.result.error);
+      }
+
+      const publishData = isPlainRecord(publishResult.result.data) ? publishResult.result.data : {};
+      const nestedData = isPlainRecord(publishData.data) ? publishData.data : {};
+      const publishedUrl = typeof publishData.url === "string" ? publishData.url : workProduct.url;
+      const publishedExternalId = typeof nestedData.id === "string"
+        ? nestedData.id
+        : typeof publishData.id === "string"
+          ? publishData.id
+          : workProduct.externalId;
+      const nextReviewState = params?.approvedByBoard || workProduct.reviewState === "needs_board_review"
+        ? "approved"
+        : workProduct.reviewState;
+
+      const product = await updateProduct({
+        status: "published",
+        reviewState: nextReviewState,
+        url: publishedUrl,
+        externalId: publishedExternalId,
+        metadata: {
+          ...currentMetadata,
+          channel,
+          sourceSystem: "paperclip",
+          ...(publishedUrl ? { evidenceUrl: publishedUrl } : {}),
+        },
+      });
+
+      const evidenceWorkProduct = await workProductsSvc.createForIssue(issue.id, workProduct.companyId, {
+        projectId,
+        executionWorkspaceId: null,
+        runtimeServiceId: null,
+        type: "preview_url",
+        provider: "paperclip",
+        externalId: publishedExternalId,
+        title: `X publish evidence: ${workProduct.title}`,
+        url: publishedUrl ?? null,
+        status: "published",
+        reviewState: "approved",
+        isPrimary: false,
+        healthStatus: publishedUrl ? "healthy" : "unknown",
+        summary: `Published to X via API${publishedUrl ? `: ${publishedUrl}` : ""}`,
+        metadata: {
+          deliverableKind: "action_evidence",
+          channel,
+          sourceDeliverableId: workProduct.id,
+          sourceSystem: "paperclip",
+          ...(publishedUrl ? { evidenceUrl: publishedUrl } : {}),
+        },
+        createdByRunId: actor.runId ?? null,
+      });
+
+      if (evidenceWorkProduct) {
+        await logActivity(db, {
+          companyId: workProduct.companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          agentId: actor.agentId,
+          runId: actor.runId,
+          action: "issue.work_product_created",
+          entityType: "issue",
+          entityId: issue.id,
+          details: {
+            workProductId: evidenceWorkProduct.id,
+            type: evidenceWorkProduct.type,
+            provider: evidenceWorkProduct.provider,
+            source: "work_product_steering.publish_via_api",
+            sourceWorkProductId: workProduct.id,
+          },
+        });
+      }
+
+      const defaultComment = params?.approvedByBoard
+        ? `Approved and published deliverable to X via API${publishedUrl ? `: ${publishedUrl}` : ""}`
+        : `Published deliverable to X via API${publishedUrl ? `: ${publishedUrl}` : ""}`;
+      const comment = await addSteeringComment(params?.commentOverride || defaultComment);
+
+      return { product, comment, evidenceWorkProduct, publishResult: publishResult.result };
+    }
 
     if (req.body.action === "comment") {
       if (!commentText) {
@@ -1223,15 +1442,24 @@ export function issueRoutes(
     }
 
     if (req.body.action === "approve") {
+      const channel = req.body.channel ?? metadataChannel;
+      if (shouldPublishXOnApproval(channel)) {
+        const { product, comment, evidenceWorkProduct, publishResult } = await publishDeliverableViaApi({
+          approvedByBoard: true,
+          commentOverride: commentText || undefined,
+        });
+        res.json({ workProduct: product, comment, evidenceWorkProduct, publishResult });
+        return;
+      }
       const product = await updateProduct({ status: "approved", reviewState: "approved" });
-      const comment = await addSteeringComment(commentText || `Approved deliverable: ${existing.title}`);
+      const comment = await addSteeringComment(commentText || `Approved deliverable: ${workProduct.title}`);
       res.json({ workProduct: product, comment });
       return;
     }
 
     if (req.body.action === "request_changes") {
       const product = await updateProduct({ status: "changes_requested", reviewState: "changes_requested" });
-      const comment = await addSteeringComment(commentText || `Changes requested for deliverable: ${existing.title}`);
+      const comment = await addSteeringComment(commentText || `Changes requested for deliverable: ${workProduct.title}`);
       res.json({ workProduct: product, comment });
       return;
     }
@@ -1252,141 +1480,17 @@ export function issueRoutes(
     }
 
     if (req.body.action === "publish_via_api") {
-      const channel = req.body.channel ?? (typeof currentMetadata.channel === "string" ? currentMetadata.channel : undefined);
-      if (channel !== "x") {
-        res.status(422).json({ error: 'Direct API publish currently supports only channel "x"' });
-        return;
-      }
-
-      const toolDispatcher = opts?.getToolDispatcher?.() ?? null;
-      if (!toolDispatcher || !toolDispatcher.getTool(X_API_PUBLISH_TOOL)) {
-        res.status(422).json({ error: "X API publisher is not available" });
-        return;
-      }
-
-      const projectId = sourceIssue.projectId ?? existing.projectId;
-      if (!projectId) {
-        res.status(422).json({ error: "Project context required for API publish" });
-        return;
-      }
-
-      let publishText = "";
-      const documentKey = typeof currentMetadata.documentKey === "string" ? currentMetadata.documentKey.trim() : "";
-      if (documentKey) {
-        const document = await documentsSvc.getIssueDocumentByKey(sourceIssue.id, documentKey);
-        publishText = document?.body?.trim() ?? "";
-      }
-      if (!publishText) publishText = existing.summary?.trim() ?? "";
-      if (!publishText) publishText = existing.title.trim();
-      if (!publishText) {
-        res.status(422).json({ error: "Deliverable has no publishable text" });
-        return;
-      }
-
-      let publishResult: Awaited<ReturnType<PluginToolDispatcher["executeTool"]>>;
-      try {
-        publishResult = await toolDispatcher.executeTool(
-          X_API_PUBLISH_TOOL,
-          { text: publishText },
-          {
-            agentId: actor.agentId ?? sourceIssue.assigneeAgentId ?? SYSTEM_TOOL_RUN_AGENT_ID,
-            runId: actor.runId ?? randomUUID(),
-            companyId: existing.companyId,
-            projectId,
-          },
-        );
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        if (message.includes("not running") || message.includes("worker")) {
-          res.status(502).json({ error: message });
-          return;
-        }
-        res.status(500).json({ error: message });
-        return;
-      }
-
-      if (publishResult.result.error) {
-        res.status(422).json({ error: publishResult.result.error });
-        return;
-      }
-
-      const publishData = isPlainRecord(publishResult.result.data) ? publishResult.result.data : {};
-      const nestedData = isPlainRecord(publishData.data) ? publishData.data : {};
-      const publishedUrl = typeof publishData.url === "string" ? publishData.url : existing.url;
-      const publishedExternalId = typeof nestedData.id === "string"
-        ? nestedData.id
-        : typeof publishData.id === "string"
-          ? publishData.id
-          : existing.externalId;
-
-      const product = await updateProduct({
-        status: "published",
-        reviewState: existing.reviewState === "needs_board_review" ? "approved" : existing.reviewState,
-        url: publishedUrl,
-        externalId: publishedExternalId,
-        metadata: {
-          ...currentMetadata,
-          channel,
-          sourceSystem: "paperclip",
-          ...(publishedUrl ? { evidenceUrl: publishedUrl } : {}),
-        },
+      const { product, comment, evidenceWorkProduct, publishResult } = await publishDeliverableViaApi({
+        commentOverride: commentText || undefined,
       });
-
-      const evidenceWorkProduct = await workProductsSvc.createForIssue(sourceIssue.id, existing.companyId, {
-        projectId,
-        executionWorkspaceId: null,
-        runtimeServiceId: null,
-        type: "preview_url",
-        provider: "paperclip",
-        externalId: publishedExternalId,
-        title: `X publish evidence: ${existing.title}`,
-        url: publishedUrl ?? null,
-        status: "published",
-        reviewState: "approved",
-        isPrimary: false,
-        healthStatus: publishedUrl ? "healthy" : "unknown",
-        summary: `Published to X via API${publishedUrl ? `: ${publishedUrl}` : ""}`,
-        metadata: {
-          deliverableKind: "action_evidence",
-          channel,
-          sourceDeliverableId: existing.id,
-          sourceSystem: "paperclip",
-          ...(publishedUrl ? { evidenceUrl: publishedUrl } : {}),
-        },
-        createdByRunId: actor.runId ?? null,
-      });
-
-      if (evidenceWorkProduct) {
-        await logActivity(db, {
-          companyId: existing.companyId,
-          actorType: actor.actorType,
-          actorId: actor.actorId,
-          agentId: actor.agentId,
-          runId: actor.runId,
-          action: "issue.work_product_created",
-          entityType: "issue",
-          entityId: sourceIssue.id,
-          details: {
-            workProductId: evidenceWorkProduct.id,
-            type: evidenceWorkProduct.type,
-            provider: evidenceWorkProduct.provider,
-            source: "work_product_steering.publish_via_api",
-            sourceWorkProductId: existing.id,
-          },
-        });
-      }
-
-      const comment = await addSteeringComment(
-        commentText || `Published deliverable to X via API${publishedUrl ? `: ${publishedUrl}` : ""}`,
-      );
-      res.json({ workProduct: product, comment, evidenceWorkProduct, publishResult: publishResult.result });
+      res.json({ workProduct: product, comment, evidenceWorkProduct, publishResult });
       return;
     }
 
     if (req.body.action === "mark_published") {
       const product = await updateProduct({
         status: "published",
-        reviewState: existing.reviewState === "needs_board_review" ? "approved" : existing.reviewState,
+        reviewState: workProduct.reviewState === "needs_board_review" ? "approved" : workProduct.reviewState,
       });
       const comment = commentText
         ? await addSteeringComment(commentText)
@@ -1405,8 +1509,8 @@ export function issueRoutes(
     }
 
     if (req.body.action === "send_to_openclaw") {
-      await assertCanAssignTasks(req, existing.companyId);
-      const openClawAgents = (await agentsSvc.list(existing.companyId))
+      await assertCanAssignTasks(req, workProduct.companyId);
+      const openClawAgents = (await agentsSvc.list(workProduct.companyId))
         .filter((agent) => agent.adapterType === "openclaw_gateway" && agent.status !== "terminated");
       const selectedAgent = req.body.openClawAgentId
         ? openClawAgents.find((agent) => agent.id === req.body.openClawAgentId) ?? null
@@ -1423,17 +1527,17 @@ export function issueRoutes(
         return;
       }
 
-      const channel = req.body.channel ?? (typeof currentMetadata.channel === "string" ? currentMetadata.channel : undefined);
-      const openClawIssue = await svc.create(existing.companyId, {
-        title: `OpenClaw action: ${existing.title}`,
+      const channel = req.body.channel ?? metadataChannel;
+      const openClawIssue = await svc.create(workProduct.companyId, {
+        title: `OpenClaw action: ${workProduct.title}`,
         description: [
           "Execute the approved deliverable through OpenClaw and report evidence back to Paperclip.",
           "",
-          `Source deliverable: ${existing.title}`,
-          `Source work product id: ${existing.id}`,
-          `Source issue: ${sourceIssue.identifier ?? sourceIssue.id} — ${sourceIssue.title}`,
+          `Source deliverable: ${workProduct.title}`,
+          `Source work product id: ${workProduct.id}`,
+          `Source issue: ${issue.identifier ?? issue.id} — ${issue.title}`,
           channel ? `Channel: ${channel}` : null,
-          existing.url ? `Deliverable URL: ${existing.url}` : null,
+          workProduct.url ? `Deliverable URL: ${workProduct.url}` : null,
           "",
           "Required result:",
           "- complete the requested browser/external UI action",
@@ -1443,15 +1547,15 @@ export function issueRoutes(
         status: "todo",
         priority: "medium",
         assigneeAgentId: selectedAgent.id,
-        projectId: sourceIssue.projectId,
-        goalId: sourceIssue.goalId,
-        parentId: sourceIssue.id,
+        projectId: issue.projectId,
+        goalId: issue.goalId,
+        parentId: issue.id,
         createdByAgentId: actor.agentId,
         createdByUserId: actor.actorType === "user" ? actor.actorId : null,
       });
 
       await logActivity(db, {
-        companyId: existing.companyId,
+        companyId: workProduct.companyId,
         actorType: actor.actorType,
         actorId: actor.actorId,
         agentId: actor.agentId,
@@ -1463,7 +1567,7 @@ export function issueRoutes(
           title: openClawIssue.title,
           identifier: openClawIssue.identifier,
           source: "work_product_steering",
-          sourceWorkProductId: existing.id,
+          sourceWorkProductId: workProduct.id,
         },
       });
 

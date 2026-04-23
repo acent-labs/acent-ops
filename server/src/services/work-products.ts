@@ -12,6 +12,7 @@ type DeliverableFilters = {
   kind?: string;
   channel?: string;
   limit?: number;
+  offset?: number;
 };
 
 function toIssueWorkProduct(row: IssueWorkProductRow): IssueWorkProduct {
@@ -86,7 +87,10 @@ export function workProductService(db: Db) {
       .where(and(...conditions))
       .orderBy(desc(issueWorkProducts.isPrimary), desc(issueWorkProducts.updatedAt));
 
-    const rows = filters.limit ? await query.limit(filters.limit) : await query;
+    const pagedQuery = typeof filters.offset === "number" && filters.offset > 0
+      ? query.offset(filters.offset)
+      : query;
+    const rows = filters.limit ? await pagedQuery.limit(filters.limit) : await pagedQuery;
     return rows.map((row): DeliverableListItem => ({
       workProduct: toIssueWorkProduct(row.workProduct),
       issue: row.issue,
