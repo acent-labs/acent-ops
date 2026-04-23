@@ -258,7 +258,7 @@ See [docs/reference/DEVELOPING.md](https://github.com/paperclipai/paperclip/blob
 - ⚪ Artifacts & Deployments
 - ⚪ CEO Chat
 - ⚪ MAXIMIZER MODE
-- ⚪ Multiple Human Users
+- ✅ Multiple Human Users
 - ⚪ Cloud / Sandbox agents (e.g. Cursor / e2b agents)
 - ⚪ Cloud deployments
 - ⚪ Desktop App

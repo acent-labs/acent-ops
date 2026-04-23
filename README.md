@@ -291,7 +291,7 @@ See [docs/reference/DEVELOPING.md](docs/reference/DEVELOPING.md) for the full de
 - ✅ Scheduled Routines
 - ✅ Better Budgeting
 - ✅ Agent Reviews and Approvals
-- ⚪ Multiple Human Users
+- ✅ Multiple Human Users
 - ⚪ Cloud / Sandbox agents (e.g. Cursor / e2b agents)
 - ⚪ Artifacts & Work Products
 - ⚪ Memory / Knowledge

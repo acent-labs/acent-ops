@@ -94,6 +94,8 @@ export const hermesLocalUIAdapter: UIAdapterModule = {
   type: "hermes_local",
   label: "Hermes Agent",
   parseStdoutLine: parseHermesStdoutLine,
+  // ACENT: preserve local Hermes integration (env bindings + secret_ref + extraArgs reasoning-effort).
+  // Migration candidate: move to upstream SchemaConfigFields pattern once it supports our features.
   ConfigFields: HermesLocalConfigFields,
   buildAdapterConfig: buildHermesLocalConfig,
 };
