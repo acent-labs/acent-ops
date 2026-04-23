@@ -54,3 +54,6 @@ tests/release-smoke/playwright-report/
 .superset/
 .claude/worktrees/
 
+
+# Local sales-deck working artifacts (paperclip doc dumps, generated pptx)
+.sales-deck-build/
