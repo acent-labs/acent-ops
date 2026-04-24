@@ -292,15 +292,18 @@ async function registerTools(ctx: PluginContext): Promise<void> {
         type: "object",
         properties: {
           text: { type: "string" },
+          replyToPostId: { type: "string" },
         },
         required: ["text"],
       },
     },
     async (params): Promise<ToolResult> => {
-      const { text } = params as { text: string };
+      const { text, replyToPostId } = params as { text: string; replyToPostId?: string };
       if (!text) return { error: "text is required" };
       const client = await getClient(ctx);
-      const result = await client.createPost(text) as { data?: { id?: string; text?: string } };
+      const result = await client.createPost(text, replyToPostId ? { replyToPostId } : undefined) as {
+        data?: { id?: string; text?: string };
+      };
       const id = result?.data?.id ?? null;
       const url = id ? `https://x.com/i/web/status/${id}` : null;
       return {
@@ -315,7 +318,48 @@ async function registerTools(ctx: PluginContext): Promise<void> {
     },
   );
 
-  // 4. x-get-me
+  // 4. x-create-thread
+  ctx.tools.register(
+    TOOL_NAMES.xCreateThread,
+    {
+      displayName: "X Create Thread",
+      description: "Create an X thread by replying each post to the previous one.",
+      parametersSchema: {
+        type: "object",
+        properties: {
+          posts: {
+            type: "array",
+            items: { type: "string" },
+            minItems: 2,
+          },
+        },
+        required: ["posts"],
+      },
+    },
+    async (params): Promise<ToolResult> => {
+      const { posts } = params as { posts?: unknown };
+      if (!Array.isArray(posts)) return { error: "posts must be an array of strings" };
+      const normalizedPosts = posts
+        .map((post) => typeof post === "string" ? post.trim() : "")
+        .filter(Boolean);
+      if (normalizedPosts.length < 2) return { error: "x-create-thread requires at least two posts" };
+
+      const client = await getClient(ctx);
+      const result = await client.createThread(normalizedPosts);
+      return {
+        content: JSON.stringify({
+          message: "Thread created successfully on X.",
+          rootId: result.rootId,
+          lastId: result.lastId,
+          url: result.url,
+          posts: result.posts,
+        }, null, 2),
+        data: result,
+      };
+    },
+  );
+
+  // 5. x-get-me
   ctx.tools.register(
     TOOL_NAMES.xGetMe,
     {

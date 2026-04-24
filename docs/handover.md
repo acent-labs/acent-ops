@@ -149,8 +149,9 @@ CMO/Content rule:
 - For X, the default final deliverable is a post-ready draft registered for
   Command Center with `channel = x` and a publish-oriented review request, so
   founder/board approval publishes it directly through the X API path.
-  The linked X document body should contain only the publish-ready post text
-  plus any final hashtag line. Keep notes, rationale, and approval memos in the
+  The linked X document body should contain only the publish-ready post text,
+  or numbered thread sections such as `1/`, `2/` separated by `---`, plus any
+  final hashtag line. Keep notes, rationale, and approval memos in the
   deliverable summary or issue comment, not in the document body that will be
   published.
 - For LinkedIn, the default final deliverable is a posting-ready draft

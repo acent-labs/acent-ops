@@ -203,7 +203,7 @@ POST /api/work-products/{workProductId}/steering
 
 Supported actions: `comment`, `approve`, `request_changes`, `queue_for_publish`, `publish_via_api`, `send_to_openclaw`, `mark_published`, `archive`.
 
-`publish_via_api` currently supports direct publish for channel `x`. The host executes the configured X plugin tool, marks the source deliverable as `published`, and registers an `action_evidence` work product with the resulting URL when available.
+`publish_via_api` currently supports direct publish for channel `x`. The host executes the configured X plugin tool, marks the source deliverable as `published`, and registers an `action_evidence` work product with the resulting URL when available. X documents that contain numbered sections such as `1/`, `2/`, separated by `---`, are published through the thread tool instead of being sent as one long post.
 
 For X deliverables registered with `metadata.channel = "x"` and `metadata.reviewRequest = "publish"`, `approve` acts as an approve-and-publish step: board approval publishes through the X API immediately instead of waiting in the publish queue.
 

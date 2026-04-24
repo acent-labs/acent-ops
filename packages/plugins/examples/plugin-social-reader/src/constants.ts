@@ -5,6 +5,7 @@ export const TOOL_NAMES = {
   xAuthStart: "x-auth-start",
   xAuthCallback: "x-auth-callback",
   xCreatePost: "x-create-post",
+  xCreateThread: "x-create-thread",
   xGetMe: "x-get-me",
   xGetUserTweets: "x-get-user-tweets",
   xSearch: "x-search",

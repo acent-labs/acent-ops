@@ -425,6 +425,119 @@ describe("issue deliverable routes", () => {
     expect(res.body.evidenceWorkProduct.metadata.deliverableKind).toBe("action_evidence");
   });
 
+  it("publishes numbered X draft sections as a reply thread", async () => {
+    const app = await createApp();
+    mockWorkProductService.getById.mockResolvedValue({
+      ...workProduct,
+      status: "queued_for_publish",
+      reviewState: "approved",
+      metadata: {
+        deliverableKind: "social_post",
+        documentKey: "briefing",
+        channel: "x",
+        sourceSystem: "paperclip",
+      },
+    });
+    mockDocumentService.getIssueDocumentByKey.mockResolvedValue({
+      key: "briefing",
+      body: `# ACE-202 X 최종안
+
+### X thread draft
+1/
+Claude Opus 4.7에서 조용히 바뀐 건 모델 크기가 아니라 비용 구조다.
+
+---
+
+2/
+예전엔 에이전트 돌려놓고 끝난 뒤에야 얼마 태웠는지 알았다.
+
+---
+
+3/
+예산을 먼저 정하고, 그 안에서 어디까지 갈지 모델이 알아서 맞춘다.
+
+해시태그: #Claude #AIagents`,
+    });
+    mockToolDispatcher.executeTool.mockResolvedValue({
+      pluginId: "paperclip-social-reader",
+      toolName: "x-create-thread",
+      result: {
+        data: {
+          data: {
+            id: "2046425694436249985",
+            text: "Claude Opus 4.7에서 조용히 바뀐 건 모델 크기가 아니라 비용 구조다.",
+          },
+          rootId: "2046425694436249985",
+          lastId: "2046425694436249987",
+          url: "https://x.com/i/web/status/2046425694436249985",
+          posts: [
+            {
+              id: "2046425694436249985",
+              text: "Claude Opus 4.7에서 조용히 바뀐 건 모델 크기가 아니라 비용 구조다.",
+              url: "https://x.com/i/web/status/2046425694436249985",
+            },
+            {
+              id: "2046425694436249986",
+              text: "예전엔 에이전트 돌려놓고 끝난 뒤에야 얼마 태웠는지 알았다.",
+              url: "https://x.com/i/web/status/2046425694436249986",
+            },
+            {
+              id: "2046425694436249987",
+              text: "예산을 먼저 정하고, 그 안에서 어디까지 갈지 모델이 알아서 맞춘다.\n\n#Claude #AIagents",
+              url: "https://x.com/i/web/status/2046425694436249987",
+            },
+          ],
+        },
+      },
+    });
+
+    await request(app)
+      .post(`/api/work-products/${workProduct.id}/steering`)
+      .send({ action: "publish_via_api" })
+      .expect(200);
+
+    expect(mockToolDispatcher.executeTool).toHaveBeenCalledWith(
+      "paperclip-social-reader:x-create-thread",
+      {
+        posts: [
+          "Claude Opus 4.7에서 조용히 바뀐 건 모델 크기가 아니라 비용 구조다.",
+          "예전엔 에이전트 돌려놓고 끝난 뒤에야 얼마 태웠는지 알았다.",
+          "예산을 먼저 정하고, 그 안에서 어디까지 갈지 모델이 알아서 맞춘다.\n\n#Claude #AIagents",
+        ],
+      },
+      expect.objectContaining({
+        companyId: "company-1",
+        projectId: sourceIssue.projectId,
+      }),
+    );
+    expect(mockWorkProductService.update).toHaveBeenCalledWith(workProduct.id, expect.objectContaining({
+      status: "published",
+      externalId: "2046425694436249985",
+      url: "https://x.com/i/web/status/2046425694436249985",
+      metadata: expect.objectContaining({
+        publishMode: "thread",
+        threadPostCount: 3,
+        threadPostIds: [
+          "2046425694436249985",
+          "2046425694436249986",
+          "2046425694436249987",
+        ],
+      }),
+    }));
+    expect(mockWorkProductService.createForIssue).toHaveBeenCalledWith(
+      sourceIssue.id,
+      "company-1",
+      expect.objectContaining({
+        title: "X thread publish evidence: AI narrative briefing",
+        metadata: expect.objectContaining({
+          deliverableKind: "action_evidence",
+          publishMode: "thread",
+          threadPostCount: 3,
+        }),
+      }),
+    );
+  });
+
   it("rejects direct API publish for non-X channels", async () => {
     const app = await createApp();
     mockWorkProductService.getById.mockResolvedValue({

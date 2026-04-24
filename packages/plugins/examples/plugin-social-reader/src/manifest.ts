@@ -7,7 +7,7 @@ const manifest: PaperclipPluginManifestV1 = {
   version: PLUGIN_VERSION,
   displayName: "X Connector",
   description:
-    "X (Twitter) connector with OAuth 2.0 PKCE and OAuth 1.0a compatibility. Agents can authorize, post, and inspect profiles, tweets, followers, mentions, and search results.",
+    "X (Twitter) connector with OAuth 2.0 PKCE and OAuth 1.0a compatibility. Agents can authorize, post, publish threads, and inspect profiles, tweets, followers, mentions, and search results.",
   author: "Acent Labs",
   categories: ["connector", "automation"],
   capabilities: [
@@ -128,8 +128,32 @@ const manifest: PaperclipPluginManifestV1 = {
             type: "string",
             description: "The post text to publish.",
           },
+          replyToPostId: {
+            type: "string",
+            description: "Optional parent post ID. When provided, the new post is published as a reply.",
+          },
         },
         required: ["text"],
+      },
+    },
+    {
+      name: TOOL_NAMES.xCreateThread,
+      displayName: "X Create Thread",
+      description:
+        "Create an X thread by publishing the first text post, then replying to each previous post.",
+      parametersSchema: {
+        type: "object",
+        properties: {
+          posts: {
+            type: "array",
+            description: "Ordered post texts to publish as a reply chain.",
+            minItems: 2,
+            items: {
+              type: "string",
+            },
+          },
+        },
+        required: ["posts"],
       },
     },
     {

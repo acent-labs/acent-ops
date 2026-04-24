@@ -70,6 +70,7 @@ import {
 
 const MAX_ISSUE_COMMENT_LIMIT = 500;
 const X_API_PUBLISH_TOOL = "paperclip-social-reader:x-create-post";
+const X_API_THREAD_PUBLISH_TOOL = "paperclip-social-reader:x-create-thread";
 const SYSTEM_TOOL_RUN_AGENT_ID = "00000000-0000-4000-8000-000000000001";
 const updateIssueRouteSchema = updateIssueSchema.extend({
   interrupt: z.boolean().optional(),
@@ -429,6 +430,66 @@ export function issueRoutes(
     while (extracted.at(-1) === "") extracted.pop();
 
     return extracted.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  }
+
+  function cleanXThreadPart(lines: string[]) {
+    const normalized = lines
+      .map((line) => line.trimEnd())
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+    return normalized;
+  }
+
+  function parseXThreadParts(text: string) {
+    const normalized = text.replace(/\r\n/g, "\n").trim();
+    if (!normalized) return [];
+
+    const parts: string[] = [];
+    let current: string[] = [];
+    let sawSeparator = false;
+    let expectedMarker = 1;
+    let markerCount = 0;
+
+    function flushCurrent() {
+      const part = cleanXThreadPart(current);
+      if (part) parts.push(part);
+      current = [];
+    }
+
+    for (const rawLine of normalized.split("\n")) {
+      const trimmed = rawLine.trim();
+      if (/^-{3,}$/.test(trimmed)) {
+        sawSeparator = true;
+        flushCurrent();
+        continue;
+      }
+
+      const marker = trimmed.match(/^(\d+)\s*\/\s*(.*)$/);
+      if (marker && Number(marker[1]) === expectedMarker) {
+        markerCount += 1;
+        expectedMarker += 1;
+        flushCurrent();
+        const markerRest = marker[2]?.trim();
+        if (markerRest) current.push(markerRest);
+        continue;
+      }
+
+      current.push(rawLine);
+    }
+
+    flushCurrent();
+
+    const looksLikeThread = markerCount >= 2 || (sawSeparator && parts.length >= 2);
+    return looksLikeThread ? parts : [];
+  }
+
+  function buildXPublishInput(text: string) {
+    const threadParts = parseXThreadParts(text);
+    if (threadParts.length >= 2) {
+      return { kind: "thread" as const, posts: threadParts };
+    }
+    return { kind: "single" as const, text };
   }
 
   function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -1308,11 +1369,6 @@ export function issueRoutes(
         throw new HttpError(422, 'Direct API publish currently supports only channel "x"');
       }
 
-      const toolDispatcher = opts?.getToolDispatcher?.() ?? null;
-      if (!toolDispatcher || !toolDispatcher.getTool(X_API_PUBLISH_TOOL)) {
-        throw new HttpError(422, "X API publisher is not available");
-      }
-
       const projectId = issue.projectId ?? workProduct.projectId;
       if (!projectId) {
         throw new HttpError(422, "Project context required for API publish");
@@ -1330,11 +1386,23 @@ export function issueRoutes(
         throw new HttpError(422, "Deliverable has no publishable text");
       }
 
+      const publishInput = buildXPublishInput(publishText);
+      const publishTool = publishInput.kind === "thread" ? X_API_THREAD_PUBLISH_TOOL : X_API_PUBLISH_TOOL;
+      const toolDispatcher = opts?.getToolDispatcher?.() ?? null;
+      if (!toolDispatcher || !toolDispatcher.getTool(publishTool)) {
+        throw new HttpError(
+          422,
+          publishInput.kind === "thread"
+            ? "X thread publisher is not available"
+            : "X API publisher is not available",
+        );
+      }
+
       let publishResult: Awaited<ReturnType<PluginToolDispatcher["executeTool"]>>;
       try {
         publishResult = await toolDispatcher.executeTool(
-          X_API_PUBLISH_TOOL,
-          { text: publishText },
+          publishTool,
+          publishInput.kind === "thread" ? { posts: publishInput.posts } : { text: publishInput.text },
           {
             agentId: actor.agentId ?? issue.assigneeAgentId ?? SYSTEM_TOOL_RUN_AGENT_ID,
             runId: actor.runId ?? randomUUID(),
@@ -1356,12 +1424,23 @@ export function issueRoutes(
 
       const publishData = isPlainRecord(publishResult.result.data) ? publishResult.result.data : {};
       const nestedData = isPlainRecord(publishData.data) ? publishData.data : {};
+      const publishedThreadPosts = Array.isArray(publishData.posts)
+        ? publishData.posts.filter(isPlainRecord)
+        : [];
+      const publishedThreadPostIds = publishedThreadPosts
+        .map((post) => typeof post.id === "string" ? post.id : "")
+        .filter(Boolean);
+      const publishedThreadPostUrls = publishedThreadPosts
+        .map((post) => typeof post.url === "string" ? post.url : "")
+        .filter(Boolean);
       const publishedUrl = typeof publishData.url === "string" ? publishData.url : workProduct.url;
       const publishedExternalId = typeof nestedData.id === "string"
         ? nestedData.id
-        : typeof publishData.id === "string"
-          ? publishData.id
-          : workProduct.externalId;
+        : typeof publishData.rootId === "string"
+          ? publishData.rootId
+          : typeof publishData.id === "string"
+            ? publishData.id
+            : workProduct.externalId;
       const nextReviewState = params?.approvedByBoard || workProduct.reviewState === "needs_board_review"
         ? "approved"
         : workProduct.reviewState;
@@ -1375,6 +1454,10 @@ export function issueRoutes(
           ...currentMetadata,
           channel,
           sourceSystem: "paperclip",
+          publishMode: publishInput.kind,
+          ...(publishInput.kind === "thread" ? { threadPostCount: publishInput.posts.length } : {}),
+          ...(publishedThreadPostIds.length ? { threadPostIds: publishedThreadPostIds } : {}),
+          ...(publishedThreadPostUrls.length ? { threadPostUrls: publishedThreadPostUrls } : {}),
           ...(publishedUrl ? { evidenceUrl: publishedUrl } : {}),
         },
       });
@@ -1386,18 +1469,22 @@ export function issueRoutes(
         type: "preview_url",
         provider: "paperclip",
         externalId: publishedExternalId,
-        title: `X publish evidence: ${workProduct.title}`,
+        title: `${publishInput.kind === "thread" ? "X thread publish evidence" : "X publish evidence"}: ${workProduct.title}`,
         url: publishedUrl ?? null,
         status: "published",
         reviewState: "approved",
         isPrimary: false,
         healthStatus: publishedUrl ? "healthy" : "unknown",
-        summary: `Published to X via API${publishedUrl ? `: ${publishedUrl}` : ""}`,
+        summary: `Published ${publishInput.kind === "thread" ? "X thread" : "to X"} via API${publishedUrl ? `: ${publishedUrl}` : ""}`,
         metadata: {
           deliverableKind: "action_evidence",
           channel,
+          publishMode: publishInput.kind,
           sourceDeliverableId: workProduct.id,
           sourceSystem: "paperclip",
+          ...(publishInput.kind === "thread" ? { threadPostCount: publishInput.posts.length } : {}),
+          ...(publishedThreadPostIds.length ? { threadPostIds: publishedThreadPostIds } : {}),
+          ...(publishedThreadPostUrls.length ? { threadPostUrls: publishedThreadPostUrls } : {}),
           ...(publishedUrl ? { evidenceUrl: publishedUrl } : {}),
         },
         createdByRunId: actor.runId ?? null,
@@ -1424,8 +1511,8 @@ export function issueRoutes(
       }
 
       const defaultComment = params?.approvedByBoard
-        ? `Approved and published deliverable to X via API${publishedUrl ? `: ${publishedUrl}` : ""}`
-        : `Published deliverable to X via API${publishedUrl ? `: ${publishedUrl}` : ""}`;
+        ? `Approved and published deliverable to ${publishInput.kind === "thread" ? "X thread" : "X"} via API${publishedUrl ? `: ${publishedUrl}` : ""}`
+        : `Published deliverable to ${publishInput.kind === "thread" ? "X thread" : "X"} via API${publishedUrl ? `: ${publishedUrl}` : ""}`;
       const comment = await addSteeringComment(params?.commentOverride || defaultComment);
 
       return { product, comment, evidenceWorkProduct, publishResult: publishResult.result };

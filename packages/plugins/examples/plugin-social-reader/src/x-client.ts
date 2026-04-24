@@ -46,6 +46,12 @@ const TWEET_FIELDS = ["public_metrics", "created_at"];
 const TWEET_FIELDS_WITH_AUTHOR = ["public_metrics", "created_at", "author_id"];
 const USER_SEARCH_FIELDS = ["name", "username"];
 
+type CreatedPost = {
+  id: string;
+  text: string;
+  url: string;
+};
+
 function clamp(value: number | undefined, min: number, max: number, fallback: number): number {
   if (typeof value !== "number" || Number.isNaN(value)) return fallback;
   return Math.max(min, Math.min(value, max));
@@ -197,8 +203,54 @@ export class XApiClient {
     });
   }
 
-  async createPost(text: string): Promise<unknown> {
-    return this.requireWriteClient().posts.create({ text });
+  async createPost(text: string, opts?: { replyToPostId?: string }): Promise<unknown> {
+    const body: { text: string; reply?: { in_reply_to_tweet_id: string } } = { text };
+    if (opts?.replyToPostId) {
+      body.reply = { in_reply_to_tweet_id: opts.replyToPostId };
+    }
+    return this.requireWriteClient().posts.create(body);
+  }
+
+  async createThread(posts: string[]): Promise<{
+    data: { id: string; text: string };
+    rootId: string;
+    lastId: string;
+    url: string;
+    posts: CreatedPost[];
+  }> {
+    const created: CreatedPost[] = [];
+    let replyToPostId: string | undefined;
+
+    for (const [index, text] of posts.entries()) {
+      const result = await this.createPost(text, replyToPostId ? { replyToPostId } : undefined) as {
+        data?: { id?: string; text?: string };
+      };
+      const id = result.data?.id;
+      if (!id) {
+        throw new Error(`X did not return an id for thread post ${index + 1}`);
+      }
+      const post = {
+        id,
+        text: result.data?.text ?? text,
+        url: `https://x.com/i/web/status/${id}`,
+      };
+      created.push(post);
+      replyToPostId = id;
+    }
+
+    const root = created[0];
+    const last = created.at(-1);
+    if (!root || !last) {
+      throw new Error("Thread requires at least one post");
+    }
+
+    return {
+      data: { id: root.id, text: root.text },
+      rootId: root.id,
+      lastId: last.id,
+      url: root.url,
+      posts: created,
+    };
   }
 
   async getUserTweets(userId?: string, maxResults = 10): Promise<unknown> {
