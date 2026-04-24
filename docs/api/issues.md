@@ -203,9 +203,9 @@ POST /api/work-products/{workProductId}/steering
 
 Supported actions: `comment`, `approve`, `request_changes`, `queue_for_publish`, `publish_via_api`, `send_to_openclaw`, `mark_published`, `archive`.
 
-`publish_via_api` currently supports direct publish for channel `x`. The host executes the configured X plugin tool, marks the source deliverable as `published`, and registers an `action_evidence` work product with the resulting URL when available. X documents that contain numbered sections such as `1/`, `2/`, separated by `---`, are published through the thread tool instead of being sent as one long post.
+`publish_via_api` currently supports direct publish for channels `x` and `blog`. For `x`, the host executes the configured X plugin tool, marks the source deliverable as `published`, and registers an `action_evidence` work product with the resulting URL when available. X documents that contain numbered sections such as `1/`, `2/`, separated by `---`, are published through the thread tool instead of being sent as one long post.
 
-For X deliverables registered with `metadata.channel = "x"` and `metadata.reviewRequest = "publish"`, `approve` acts as an approve-and-publish step: board approval publishes through the X API immediately instead of waiting in the publish queue.
+For `x` or `blog` deliverables registered with `metadata.reviewRequest = "publish"`, `approve` acts as an approve-and-publish step: board approval publishes through the configured API immediately instead of waiting in the publish queue. Blog publish requires `metadata.channel = "blog"` and either `metadata.blogCategoryId`, `metadata.blogCategorySlug`, `PAPERCLIP_BLOG_DEFAULT_CATEGORY_ID`, or `PAPERCLIP_BLOG_DEFAULT_CATEGORY_SLUG`; the server also needs `PAPERCLIP_BLOG_PUBLISH_URL`, `PAPERCLIP_BLOG_PUBLISH_TOKEN`, and optionally `PAPERCLIP_BLOG_PUBLIC_ORIGIN`.
 
 ## Attachments
 

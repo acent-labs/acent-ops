@@ -72,6 +72,7 @@ const MAX_ISSUE_COMMENT_LIMIT = 500;
 const X_API_PUBLISH_TOOL = "paperclip-social-reader:x-create-post";
 const X_API_THREAD_PUBLISH_TOOL = "paperclip-social-reader:x-create-thread";
 const SYSTEM_TOOL_RUN_AGENT_ID = "00000000-0000-4000-8000-000000000001";
+const DEFAULT_BLOG_PUBLISH_TIMEOUT_MS = 15_000;
 const updateIssueRouteSchema = updateIssueSchema.extend({
   interrupt: z.boolean().optional(),
 });
@@ -383,6 +384,86 @@ export function issueRoutes(
       .replace(/__([^_]+)__/g, "$1")
       .replace(/\*([^*]+)\*/g, "$1")
       .replace(/_([^_]+)_/g, "$1");
+  }
+
+  function escapeHtml(value: string) {
+    return value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function renderInlineMarkdownAsHtml(value: string) {
+    return escapeHtml(value)
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2">$1</a>')
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/__([^_]+)__/g, "<strong>$1</strong>")
+      .replace(/`([^`]+)`/g, "<code>$1</code>");
+  }
+
+  function renderBasicMarkdownAsHtml(markdown: string) {
+    const html: string[] = [];
+    let listItems: string[] = [];
+
+    function flushList() {
+      if (listItems.length === 0) return;
+      html.push(`<ul>${listItems.join("")}</ul>`);
+      listItems = [];
+    }
+
+    for (const rawLine of markdown.replace(/\r\n/g, "\n").split("\n")) {
+      const line = rawLine.trim();
+      if (!line) {
+        flushList();
+        continue;
+      }
+
+      const heading = line.match(/^(#{1,3})\s+(.+)$/);
+      if (heading) {
+        flushList();
+        const level = heading[1]!.length + 1;
+        html.push(`<h${level}>${renderInlineMarkdownAsHtml(heading[2]!)}</h${level}>`);
+        continue;
+      }
+
+      const bullet = line.match(/^[-*]\s+(.+)$/);
+      if (bullet) {
+        listItems.push(`<li>${renderInlineMarkdownAsHtml(bullet[1]!)}</li>`);
+        continue;
+      }
+
+      flushList();
+      html.push(`<p>${renderInlineMarkdownAsHtml(line)}</p>`);
+    }
+
+    flushList();
+    return html.join("\n").trim();
+  }
+
+  function looksLikeHtml(value: string) {
+    return /<\/?(p|h[1-6]|ul|ol|li|article|section|blockquote|figure|img|a|strong|em|div)\b/i.test(value);
+  }
+
+  function extractBlogPostFromDocument(markdown: string, fallbackTitle: string) {
+    const normalized = stripMarkdownFrontmatter(markdown).trim();
+    if (!normalized) return { title: fallbackTitle.trim(), contentHtml: "" };
+
+    const fenced = extractFirstFencedCodeBlock(normalized);
+    const titleMatch = normalized.match(/^#\s+(.+)$/m) ?? normalized.match(/^(?:제목|title)\s*:\s*(.+)$/im);
+    const title = stripInlineMarkdown(titleMatch?.[1]?.trim() || fallbackTitle).trim();
+    const withoutTitle = normalized
+      .replace(/^#\s+.+$/m, "")
+      .replace(/^(?:제목|title)\s*:\s*.+$/im, "")
+      .trim();
+    const contentCandidate = fenced || withoutTitle || normalized;
+    return {
+      title,
+      contentHtml: looksLikeHtml(contentCandidate)
+        ? contentCandidate.trim()
+        : renderBasicMarkdownAsHtml(contentCandidate),
+    };
   }
 
   function extractXPublishTextFromDocument(markdown: string) {
@@ -1356,8 +1437,8 @@ export function issueRoutes(
     const metadataChannel = typeof currentMetadata.channel === "string" ? currentMetadata.channel : undefined;
     const reviewRequest = typeof currentMetadata.reviewRequest === "string" ? currentMetadata.reviewRequest : undefined;
 
-    function shouldPublishXOnApproval(channel: string | undefined) {
-      return channel === "x" && reviewRequest === "publish" && workProduct.status !== "published";
+    function shouldPublishOnApproval(channel: string | undefined) {
+      return (channel === "x" || channel === "blog") && reviewRequest === "publish" && workProduct.status !== "published";
     }
 
     async function publishDeliverableViaApi(params?: {
@@ -1365,8 +1446,11 @@ export function issueRoutes(
       commentOverride?: string;
     }) {
       const channel = req.body.channel ?? metadataChannel;
+      if (channel === "blog") {
+        return publishBlogDeliverableViaApi(params);
+      }
       if (channel !== "x") {
-        throw new HttpError(422, 'Direct API publish currently supports only channel "x"');
+        throw new HttpError(422, 'Direct API publish currently supports only channels "x" and "blog"');
       }
 
       const projectId = issue.projectId ?? workProduct.projectId;
@@ -1518,6 +1602,161 @@ export function issueRoutes(
       return { product, comment, evidenceWorkProduct, publishResult: publishResult.result };
     }
 
+    async function publishBlogDeliverableViaApi(params?: {
+      approvedByBoard?: boolean;
+      commentOverride?: string;
+    }) {
+      const publishUrl = typeof currentMetadata.publishUrl === "string" && currentMetadata.publishUrl.trim()
+        ? currentMetadata.publishUrl.trim()
+        : process.env.PAPERCLIP_BLOG_PUBLISH_URL?.trim();
+      if (!publishUrl) {
+        throw new HttpError(422, "Blog publish URL is not configured");
+      }
+
+      const publishToken = process.env.PAPERCLIP_BLOG_PUBLISH_TOKEN?.trim();
+      if (!publishToken) {
+        throw new HttpError(422, "Blog publish token is not configured");
+      }
+
+      const categoryId = typeof currentMetadata.blogCategoryId === "string" && currentMetadata.blogCategoryId.trim()
+        ? currentMetadata.blogCategoryId.trim()
+        : process.env.PAPERCLIP_BLOG_DEFAULT_CATEGORY_ID?.trim();
+      const categorySlug = typeof currentMetadata.blogCategorySlug === "string" && currentMetadata.blogCategorySlug.trim()
+        ? currentMetadata.blogCategorySlug.trim()
+        : process.env.PAPERCLIP_BLOG_DEFAULT_CATEGORY_SLUG?.trim();
+      if (!categoryId && !categorySlug) {
+        throw new HttpError(422, "Blog category ID or slug is required");
+      }
+
+      const documentKey = typeof currentMetadata.documentKey === "string" ? currentMetadata.documentKey.trim() : "";
+      const document = documentKey ? await documentsSvc.getIssueDocumentByKey(issue.id, documentKey) : null;
+      const fallbackTitle = typeof currentMetadata.blogTitle === "string" && currentMetadata.blogTitle.trim()
+        ? currentMetadata.blogTitle.trim()
+        : workProduct.title.trim();
+      const blogPost = extractBlogPostFromDocument(document?.body ?? workProduct.summary ?? "", fallbackTitle);
+      if (!blogPost.contentHtml) {
+        throw new HttpError(422, "Blog deliverable has no publishable content");
+      }
+
+      let response: globalThis.Response;
+      try {
+        response = await fetch(publishUrl, {
+          method: "POST",
+          headers: {
+            "authorization": `Bearer ${publishToken}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            title: blogPost.title,
+            content: blogPost.contentHtml,
+            ...(categoryId ? { category_id: categoryId } : { category_slug: categorySlug }),
+          }),
+          signal: AbortSignal.timeout(DEFAULT_BLOG_PUBLISH_TIMEOUT_MS),
+        });
+      } catch (err) {
+        throw new HttpError(502, err instanceof Error ? err.message : String(err));
+      }
+
+      let publishResult: unknown = null;
+      try {
+        publishResult = await response.json();
+      } catch {
+        publishResult = { status: response.status };
+      }
+
+      if (!response.ok) {
+        const resultRecord = isPlainRecord(publishResult) ? publishResult : {};
+        const errorMessage = typeof resultRecord.error === "string" ? resultRecord.error : "Blog publish failed";
+        throw new HttpError(response.status >= 400 && response.status < 500 ? 422 : 502, errorMessage);
+      }
+
+      const resultRecord = isPlainRecord(publishResult) ? publishResult : {};
+      const postRecord = isPlainRecord(resultRecord.post) ? resultRecord.post : {};
+      const relativeUrl = typeof resultRecord.url === "string"
+        ? resultRecord.url
+        : typeof postRecord.full_path === "string"
+          ? postRecord.full_path
+          : null;
+      const publicOrigin = process.env.PAPERCLIP_BLOG_PUBLIC_ORIGIN?.trim();
+      const publishedUrl = relativeUrl && /^https?:\/\//i.test(relativeUrl)
+        ? relativeUrl
+        : relativeUrl && publicOrigin
+          ? new URL(relativeUrl, publicOrigin).toString()
+          : relativeUrl;
+      const publishedExternalId = typeof postRecord.id === "string" ? postRecord.id : workProduct.externalId;
+      const nextReviewState = params?.approvedByBoard || workProduct.reviewState === "needs_board_review"
+        ? "approved"
+        : workProduct.reviewState;
+
+      const product = await updateProduct({
+        status: "published",
+        reviewState: nextReviewState,
+        url: publishedUrl ?? workProduct.url,
+        externalId: publishedExternalId,
+        metadata: {
+          ...currentMetadata,
+          channel: "blog",
+          sourceSystem: "paperclip",
+          ...(categoryId ? { blogCategoryId: categoryId } : {}),
+          ...(categorySlug ? { blogCategorySlug: categorySlug } : {}),
+          ...(publishedUrl ? { evidenceUrl: publishedUrl } : {}),
+        },
+      });
+
+      const evidenceWorkProduct = await workProductsSvc.createForIssue(issue.id, workProduct.companyId, {
+        projectId: issue.projectId ?? workProduct.projectId,
+        executionWorkspaceId: null,
+        runtimeServiceId: null,
+        type: "preview_url",
+        provider: "paperclip",
+        externalId: publishedExternalId,
+        title: `Blog publish evidence: ${workProduct.title}`,
+        url: publishedUrl ?? null,
+        status: "published",
+        reviewState: "approved",
+        isPrimary: false,
+        healthStatus: publishedUrl ? "healthy" : "unknown",
+        summary: `Published blog post via API${publishedUrl ? `: ${publishedUrl}` : ""}`,
+        metadata: {
+          deliverableKind: "action_evidence",
+          channel: "blog",
+          sourceDeliverableId: workProduct.id,
+          sourceSystem: "paperclip",
+          ...(categoryId ? { blogCategoryId: categoryId } : {}),
+          ...(categorySlug ? { blogCategorySlug: categorySlug } : {}),
+          ...(publishedUrl ? { evidenceUrl: publishedUrl } : {}),
+        },
+        createdByRunId: actor.runId ?? null,
+      });
+
+      if (evidenceWorkProduct) {
+        await logActivity(db, {
+          companyId: workProduct.companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          agentId: actor.agentId,
+          runId: actor.runId,
+          action: "issue.work_product_created",
+          entityType: "issue",
+          entityId: issue.id,
+          details: {
+            workProductId: evidenceWorkProduct.id,
+            type: evidenceWorkProduct.type,
+            provider: evidenceWorkProduct.provider,
+            source: "work_product_steering.publish_via_api",
+            sourceWorkProductId: workProduct.id,
+          },
+        });
+      }
+
+      const defaultComment = params?.approvedByBoard
+        ? `Approved and published blog deliverable via API${publishedUrl ? `: ${publishedUrl}` : ""}`
+        : `Published blog deliverable via API${publishedUrl ? `: ${publishedUrl}` : ""}`;
+      const comment = await addSteeringComment(params?.commentOverride || defaultComment);
+
+      return { product, comment, evidenceWorkProduct, publishResult };
+    }
+
     if (req.body.action === "comment") {
       if (!commentText) {
         res.status(422).json({ error: "comment is required for comment steering" });
@@ -1530,7 +1769,7 @@ export function issueRoutes(
 
     if (req.body.action === "approve") {
       const channel = req.body.channel ?? metadataChannel;
-      if (shouldPublishXOnApproval(channel)) {
+      if (shouldPublishOnApproval(channel)) {
         const { product, comment, evidenceWorkProduct, publishResult } = await publishDeliverableViaApi({
           approvedByBoard: true,
           commentOverride: commentText || undefined,

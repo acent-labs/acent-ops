@@ -157,6 +157,11 @@ CMO/Content rule:
 - For LinkedIn, the default final deliverable is a posting-ready draft
   registered for review with `channel = linkedin`; stop there unless the
   founder explicitly asks for posting execution.
+- For blog, the default final deliverable is a publish-ready article registered
+  for review with `channel = blog` and `reviewRequest = publish`; board approval
+  should publish it through the configured Blog Studio API and create action
+  evidence. The deliverable metadata should include `documentKey` and either
+  `blogCategoryId`/`blogCategorySlug` or rely on the configured default category.
 - OpenClaw should receive execution work through a Paperclip issue, not an
   out-of-band instruction, so its result can return as Action Evidence.
 

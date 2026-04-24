@@ -1,6 +1,6 @@
 import express from "express";
 import request from "supertest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockIssueService = vi.hoisted(() => ({
   getById: vi.fn(),
@@ -143,6 +143,11 @@ const workProduct = {
 };
 
 describe("issue deliverable routes", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockIssueService.getById.mockResolvedValue(sourceIssue);
@@ -351,6 +356,121 @@ describe("issue deliverable routes", () => {
     expect(res.body.evidenceWorkProduct.metadata.deliverableKind).toBe("action_evidence");
   });
 
+  it("approves and immediately publishes blog deliverables marked for publish review", async () => {
+    const app = await createApp();
+    vi.stubEnv("PAPERCLIP_BLOG_PUBLISH_URL", "https://www.acent.com/api/blog-studio/paperclip-publish");
+    vi.stubEnv("PAPERCLIP_BLOG_PUBLISH_TOKEN", "paperclip-blog-token");
+    vi.stubEnv("PAPERCLIP_BLOG_DEFAULT_CATEGORY_SLUG", "ai-trends-models");
+    vi.stubEnv("PAPERCLIP_BLOG_PUBLIC_ORIGIN", "https://www.acent.com");
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      success: true,
+      post: {
+        id: "blog-post-1",
+        full_path: "/blog/8211",
+      },
+      url: "/blog/8211",
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    mockWorkProductService.getById.mockResolvedValue({
+      ...workProduct,
+      metadata: {
+        deliverableKind: "report",
+        documentKey: "blog-draft",
+        channel: "blog",
+        reviewRequest: "publish",
+        sourceSystem: "paperclip",
+      },
+    });
+    mockDocumentService.getIssueDocumentByKey.mockResolvedValue({
+      key: "blog-draft",
+      body: `# 승인되면 발행되는 블로그
+
+오늘의 핵심은 **승인 게이트**입니다.
+
+- X는 API로 즉시 발행
+- LinkedIn은 수동 발행
+- Blog는 승인 후 자동 발행`,
+    });
+    mockWorkProductService.update.mockResolvedValue({
+      ...workProduct,
+      status: "published",
+      reviewState: "approved",
+      url: "https://www.acent.com/blog/8211",
+      externalId: "blog-post-1",
+      metadata: {
+        deliverableKind: "report",
+        documentKey: "blog-draft",
+        channel: "blog",
+        reviewRequest: "publish",
+        sourceSystem: "paperclip",
+        evidenceUrl: "https://www.acent.com/blog/8211",
+      },
+    });
+    mockWorkProductService.createForIssue.mockImplementation(async (_issueId, companyId, input) => ({
+      ...workProduct,
+      ...input,
+      id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      companyId,
+      issueId: sourceIssue.id,
+      createdAt: new Date("2026-04-20T00:00:00.000Z"),
+      updatedAt: new Date("2026-04-20T00:00:00.000Z"),
+    }));
+
+    const res = await request(app)
+      .post(`/api/work-products/${workProduct.id}/steering`)
+      .send({ action: "approve" })
+      .expect(200);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://www.acent.com/api/blog-studio/paperclip-publish",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          authorization: "Bearer paperclip-blog-token",
+          "content-type": "application/json",
+        }),
+        body: expect.any(String),
+      }),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).toEqual({
+      title: "승인되면 발행되는 블로그",
+      category_slug: "ai-trends-models",
+      content: [
+        "<p>오늘의 핵심은 <strong>승인 게이트</strong>입니다.</p>",
+        "<ul><li>X는 API로 즉시 발행</li><li>LinkedIn은 수동 발행</li><li>Blog는 승인 후 자동 발행</li></ul>",
+      ].join("\n"),
+    });
+    expect(mockWorkProductService.update).toHaveBeenCalledWith(workProduct.id, expect.objectContaining({
+      status: "published",
+      reviewState: "approved",
+      externalId: "blog-post-1",
+      url: "https://www.acent.com/blog/8211",
+    }));
+    expect(mockWorkProductService.createForIssue).toHaveBeenCalledWith(
+      sourceIssue.id,
+      "company-1",
+      expect.objectContaining({
+        title: "Blog publish evidence: AI narrative briefing",
+        metadata: expect.objectContaining({
+          deliverableKind: "action_evidence",
+          channel: "blog",
+          sourceDeliverableId: workProduct.id,
+          evidenceUrl: "https://www.acent.com/blog/8211",
+        }),
+      }),
+    );
+    expect(mockIssueService.addComment).toHaveBeenCalledWith(
+      sourceIssue.id,
+      "Approved and published blog deliverable via API: https://www.acent.com/blog/8211",
+      expect.objectContaining({ userId: "local-board" }),
+    );
+    expect(res.body.workProduct.status).toBe("published");
+    expect(res.body.evidenceWorkProduct.metadata.channel).toBe("blog");
+  });
+
   it("requires an OpenClaw agent before creating an execution issue", async () => {
     const app = await createApp();
 
@@ -538,7 +658,7 @@ Claude Opus 4.7에서 조용히 바뀐 건 모델 크기가 아니라 비용 구
     );
   });
 
-  it("rejects direct API publish for non-X channels", async () => {
+  it("rejects direct API publish for unsupported channels", async () => {
     const app = await createApp();
     mockWorkProductService.getById.mockResolvedValue({
       ...workProduct,
@@ -557,7 +677,7 @@ Claude Opus 4.7에서 조용히 바뀐 건 모델 크기가 아니라 비용 구
       .send({ action: "publish_via_api" })
       .expect(422);
 
-    expect(res.body.error).toBe('Direct API publish currently supports only channel "x"');
+    expect(res.body.error).toBe('Direct API publish currently supports only channels "x" and "blog"');
     expect(mockToolDispatcher.executeTool).not.toHaveBeenCalled();
   });
 });

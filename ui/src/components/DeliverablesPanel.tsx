@@ -105,12 +105,12 @@ function statusVariant(status: string) {
 
 function canPublishViaApi(item: DeliverableListItem) {
   const meta = metadataFor(item);
-  return meta.channel === "x" && item.workProduct.status === "queued_for_publish";
+  return (meta.channel === "x" || meta.channel === "blog") && item.workProduct.status === "queued_for_publish";
 }
 
 function shouldPublishOnApproval(item: DeliverableListItem) {
   const meta = metadataFor(item);
-  return meta.channel === "x" && meta.reviewRequest === "publish" && item.workProduct.status !== "published";
+  return (meta.channel === "x" || meta.channel === "blog") && meta.reviewRequest === "publish" && item.workProduct.status !== "published";
 }
 
 function approveActionLabel(item: DeliverableListItem) {
