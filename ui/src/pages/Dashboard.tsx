@@ -304,21 +304,21 @@ export function Dashboard() {
               value={data.deliverables.needsReview}
               label="Needs Review"
               to="/command-center?tab=review"
-              description={<span>Deliverables awaiting founder review</span>}
+              description={<span>Visible deliverables awaiting founder review</span>}
             />
             <MetricCard
               icon={Send}
               value={data.deliverables.publishQueue}
               label="Publish Queue"
               to="/command-center?tab=publish"
-              description={<span>Approved work waiting for external action</span>}
+              description={<span>Visible approved work waiting for external action</span>}
             />
             <MetricCard
               icon={Eye}
               value={data.deliverables.openClawEvidence}
               label="OpenClaw Evidence"
               to="/command-center?tab=evidence"
-              description={<span>Browser actions and published proof</span>}
+              description={<span>Visible browser actions and published proof</span>}
             />
           </div>
 

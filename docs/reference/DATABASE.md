@@ -94,13 +94,14 @@ Set `DATABASE_URL` in your `.env`:
 DATABASE_URL=postgres://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres
 ```
 
-If using connection pooling (port 6543), the `postgres` client must disable prepared statements. Update `packages/db/src/client.ts`:
+If using connection pooling (port 6543), Paperclip automatically disables prepared statements for `*.pooler.supabase.com` URLs and applies conservative connection lifetimes for Supavisor. You can tune these values without changing code:
 
-```ts
-export function createDb(url: string) {
-  const sql = postgres(url, { prepare: false });
-  return drizzlePg(sql, { schema });
-}
+```sh
+PAPERCLIP_DB_CONNECT_TIMEOUT_SECONDS=10
+PAPERCLIP_DB_MAX_CONNECTIONS=5
+PAPERCLIP_DB_IDLE_TIMEOUT_SECONDS=60
+PAPERCLIP_DB_MAX_LIFETIME_SECONDS=900
+PAPERCLIP_HEALTH_DB_TIMEOUT_MS=5000
 ```
 
 ### Push the schema

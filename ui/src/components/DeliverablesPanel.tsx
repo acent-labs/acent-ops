@@ -159,7 +159,8 @@ function DeliverableCard({
   const sourceSystem = typeof meta.sourceSystem === "string" ? meta.sourceSystem : item.workProduct.provider;
   const reviewRequest = typeof meta.reviewRequest === "string" ? meta.reviewRequest : "no_action";
   const actionButtonClass =
-    "h-9 min-h-9 w-full min-w-0 shrink overflow-hidden px-2.5 text-[13px] leading-none [&_svg:not([class*='size-'])]:size-3.5 sm:h-8 sm:min-h-8 sm:w-auto sm:px-2 sm:text-xs";
+    "!h-9 !min-h-9 w-full min-w-0 shrink overflow-hidden px-2.5 text-[13px] leading-none md:!h-8 md:!min-h-8 md:w-auto md:px-2 md:text-xs [&_svg:not([class*='size-'])]:size-3.5";
+  const actionLinkClass = "min-w-0 md:w-auto";
 
   return (
     <article
@@ -201,9 +202,9 @@ function DeliverableCard({
           </Link>
         </div>
 
-        <div className="grid min-w-0 grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+        <div className="grid min-w-0 grid-cols-2 gap-2 md:flex md:flex-wrap md:items-center">
           {isExternalHref(href) ? (
-            <a href={href} target="_blank" rel="noreferrer" className="min-w-0 sm:w-auto">
+            <a href={href} target="_blank" rel="noreferrer" className={actionLinkClass}>
               <Button size="xs" variant="outline" className={actionButtonClass}>
                 <ExternalLink className="h-3.5 w-3.5" />
                 <ActionButtonLabel>Open</ActionButtonLabel>

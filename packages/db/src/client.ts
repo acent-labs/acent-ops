@@ -14,6 +14,13 @@ function createUtilitySql(url: string) {
   return postgres(url, { max: 1, onnotice: () => {} });
 }
 
+function envPositiveInt(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function isSafeIdentifier(value: string): boolean {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
 }
@@ -55,8 +62,25 @@ export function createDb(url: string) {
   })();
   const isPooledConnection = parsed?.hostname.endsWith(".pooler.supabase.com") ?? false;
   const prepare = process.env.PAPERCLIP_DB_PREPARE === "false" ? false : !isPooledConnection;
+  const maxConnections = envPositiveInt(
+    "PAPERCLIP_DB_MAX_CONNECTIONS",
+    isPooledConnection ? 5 : 10,
+  );
+  const connectTimeout = envPositiveInt("PAPERCLIP_DB_CONNECT_TIMEOUT_SECONDS", 10);
+  const idleTimeout = envPositiveInt(
+    "PAPERCLIP_DB_IDLE_TIMEOUT_SECONDS",
+    isPooledConnection ? 60 : 0,
+  );
+  const maxLifetime = envPositiveInt(
+    "PAPERCLIP_DB_MAX_LIFETIME_SECONDS",
+    isPooledConnection ? 900 : 0,
+  );
   const sql = postgres(url, {
+    max: maxConnections,
     prepare,
+    connect_timeout: connectTimeout,
+    ...(idleTimeout > 0 ? { idle_timeout: idleTimeout } : {}),
+    ...(maxLifetime > 0 ? { max_lifetime: maxLifetime } : {}),
     connection: {
       search_path: "public",
     },

@@ -1,4 +1,4 @@
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { agents, approvals, companies, costEvents, issueWorkProducts, issues } from "@paperclipai/db";
 import { notFound } from "../errors.js";
@@ -25,7 +25,7 @@ export function dashboardService(db: Db) {
       const taskRows = await db
         .select({ status: issues.status, count: sql<number>`count(*)` })
         .from(issues)
-        .where(eq(issues.companyId, companyId))
+        .where(and(eq(issues.companyId, companyId), isNull(issues.hiddenAt)))
         .groupBy(issues.status);
 
       const pendingApprovals = await db
@@ -38,19 +38,38 @@ export function dashboardService(db: Db) {
         db
           .select({ count: sql<number>`count(*)` })
           .from(issueWorkProducts)
-          .where(and(eq(issueWorkProducts.companyId, companyId), eq(issueWorkProducts.reviewState, "needs_board_review")))
-          .then((rows) => Number(rows[0]?.count ?? 0)),
-        db
-          .select({ count: sql<number>`count(*)` })
-          .from(issueWorkProducts)
-          .where(and(eq(issueWorkProducts.companyId, companyId), eq(issueWorkProducts.status, "queued_for_publish")))
-          .then((rows) => Number(rows[0]?.count ?? 0)),
-        db
-          .select({ count: sql<number>`count(*)` })
-          .from(issueWorkProducts)
+          .innerJoin(issues, eq(issueWorkProducts.issueId, issues.id))
           .where(
             and(
               eq(issueWorkProducts.companyId, companyId),
+              eq(issues.companyId, companyId),
+              isNull(issues.hiddenAt),
+              eq(issueWorkProducts.reviewState, "needs_board_review"),
+            ),
+          )
+          .then((rows) => Number(rows[0]?.count ?? 0)),
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(issueWorkProducts)
+          .innerJoin(issues, eq(issueWorkProducts.issueId, issues.id))
+          .where(
+            and(
+              eq(issueWorkProducts.companyId, companyId),
+              eq(issues.companyId, companyId),
+              isNull(issues.hiddenAt),
+              eq(issueWorkProducts.status, "queued_for_publish"),
+            ),
+          )
+          .then((rows) => Number(rows[0]?.count ?? 0)),
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(issueWorkProducts)
+          .innerJoin(issues, eq(issueWorkProducts.issueId, issues.id))
+          .where(
+            and(
+              eq(issueWorkProducts.companyId, companyId),
+              eq(issues.companyId, companyId),
+              isNull(issues.hiddenAt),
               sql<boolean>`${issueWorkProducts.metadata}->>'deliverableKind' = 'action_evidence'`,
             ),
           )

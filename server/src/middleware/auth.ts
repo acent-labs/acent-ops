@@ -36,6 +36,16 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
     const runIdHeader = req.header("x-paperclip-run-id");
 
     const authHeader = req.header("authorization");
+    if (
+      opts.deploymentMode === "authenticated" &&
+      req.path === "/api/health" &&
+      !authHeader?.toLowerCase().startsWith("bearer ")
+    ) {
+      if (runIdHeader) req.actor.runId = runIdHeader;
+      next();
+      return;
+    }
+
     if (!authHeader?.toLowerCase().startsWith("bearer ")) {
       if (opts.deploymentMode === "authenticated" && opts.resolveSession) {
         let session: BetterAuthSessionResult | null = null;

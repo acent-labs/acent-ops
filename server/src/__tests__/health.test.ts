@@ -64,6 +64,68 @@ describe("GET /health", () => {
     });
   });
 
+  it("returns 503 instead of hanging when the database probe times out", async () => {
+    const db = {
+      execute: vi.fn(() => new Promise(() => undefined)),
+    } as unknown as Db;
+    const app = express();
+    app.use(
+      "/health",
+      healthRoutes(db, {
+        deploymentMode: "local_trusted",
+        deploymentExposure: "private",
+        authReady: true,
+        companyDeletionEnabled: true,
+        databaseProbeTimeoutMs: 10,
+      }),
+    );
+
+    const res = await request(app).get("/health");
+
+    expect(res.status).toBe(503);
+    expect(res.body).toEqual({
+      status: "unhealthy",
+      version: serverVersion,
+      error: "database_timeout",
+    });
+  });
+
+  it("keeps core health ok when optional dev server metadata times out", async () => {
+    mockReadPersistedDevServerStatus.mockReturnValue({
+      dirty: true,
+      lastChangedAt: "2026-04-26T00:00:00.000Z",
+      changedPathCount: 1,
+      changedPathsSample: ["server/src/routes/health.ts"],
+      pendingMigrations: [],
+      lastRestartAt: null,
+    });
+    const db = {
+      execute: vi.fn().mockResolvedValue([{ "?column?": 1 }]),
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => new Promise(() => undefined)),
+        })),
+      })),
+    } as unknown as Db;
+    const app = express();
+    app.use(
+      "/health",
+      healthRoutes(db, {
+        deploymentMode: "local_trusted",
+        deploymentExposure: "private",
+        authReady: true,
+        companyDeletionEnabled: true,
+        databaseProbeTimeoutMs: 10,
+      }),
+    );
+
+    const res = await request(app).get("/health");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ status: "ok", version: serverVersion });
+    expect(res.body.devServer).toBeUndefined();
+  });
+
   it("redacts detailed metadata for anonymous requests in authenticated mode", async () => {
     const devServerStatus = await import("../dev-server-status.js");
     vi.spyOn(devServerStatus, "readPersistedDevServerStatus").mockReturnValue(undefined);

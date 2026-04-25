@@ -25,6 +25,31 @@ function createDb() {
 }
 
 describe("actorMiddleware authenticated session profile", () => {
+  it("does not resolve browser sessions for the public health endpoint", async () => {
+    const resolveSession = vi.fn(async () => ({
+      session: { id: "session-1", userId: "user-1" },
+      user: { id: "user-1", name: "User One", email: "user@example.com" },
+    }));
+    const app = express();
+    app.use(
+      actorMiddleware(createDb(), {
+        deploymentMode: "authenticated",
+        resolveSession,
+      }),
+    );
+    app.get("/api/health", (req, res) => {
+      res.json(req.actor);
+    });
+
+    const res = await request(app)
+      .get("/api/health")
+      .set("Cookie", "__Secure-better-auth.session_token=session-token");
+
+    expect(res.status).toBe(200);
+    expect(resolveSession).not.toHaveBeenCalled();
+    expect(res.body).toMatchObject({ type: "none", source: "none" });
+  });
+
   it("preserves the signed-in user name and email on the board actor", async () => {
     const app = express();
     app.use(
