@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "@/lib/router";
 import { accessApi } from "../api/access";
 import { authApi } from "../api/auth";
+import { healthApi } from "../api/health";
 import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
 
@@ -22,6 +23,11 @@ export function BoardClaimPage() {
     queryFn: () => authApi.getSession(),
     retry: false,
   });
+  const healthQuery = useQuery({
+    queryKey: queryKeys.health,
+    queryFn: () => healthApi.get(),
+    retry: false,
+  });
   const statusQuery = useQuery({
     queryKey: ["board-claim", token, code],
     queryFn: () => accessApi.getBoardClaimStatus(token, code),
@@ -39,12 +45,18 @@ export function BoardClaimPage() {
       await statusQuery.refetch();
     },
   });
+  const googleMutation = useMutation({
+    mutationFn: async () => {
+      const { url } = await authApi.signInGoogle({ callbackURL: currentPath });
+      window.location.assign(url);
+    },
+  });
 
   if (!token || !code) {
     return <div className="mx-auto max-w-xl py-10 text-sm text-destructive">Invalid board claim URL.</div>;
   }
 
-  if (statusQuery.isLoading || sessionQuery.isLoading) {
+  if (statusQuery.isLoading || sessionQuery.isLoading || healthQuery.isLoading) {
     return <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">Loading claim challenge...</div>;
   }
 
@@ -83,6 +95,8 @@ export function BoardClaimPage() {
   }
 
   if (!sessionQuery.data) {
+    const googleAuthEnabled = healthQuery.data?.authProviders?.google === true;
+
     return (
       <div className="mx-auto max-w-xl py-10">
         <div className="rounded-lg border border-border bg-card p-6">
@@ -90,9 +104,26 @@ export function BoardClaimPage() {
           <p className="mt-2 text-sm text-muted-foreground">
             Sign in or create an account, then return to this page to claim Board ownership.
           </p>
-          <Button asChild className="mt-4">
-            <Link to={`/auth?next=${encodeURIComponent(currentPath)}`}>Sign in / Create account</Link>
-          </Button>
+          {googleMutation.error && (
+            <p className="mt-3 text-sm text-destructive">
+              {googleMutation.error instanceof Error ? googleMutation.error.message : "Google authentication failed"}
+            </p>
+          )}
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            {googleAuthEnabled && (
+              <Button
+                onClick={() => googleMutation.mutate()}
+                disabled={googleMutation.isPending}
+              >
+                {googleMutation.isPending ? "Redirecting..." : "Continue with Google"}
+              </Button>
+            )}
+            <Button asChild variant={googleAuthEnabled ? "outline" : "default"}>
+              <Link to={`/auth?next=${encodeURIComponent(currentPath)}`}>
+                {googleAuthEnabled ? "Use email instead" : "Sign in / Create account"}
+              </Link>
+            </Button>
+          </div>
         </div>
       </div>
     );

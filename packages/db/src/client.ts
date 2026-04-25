@@ -46,7 +46,21 @@ export type MigrationState =
     };
 
 export function createDb(url: string) {
-  const sql = postgres(url);
+  const parsed = (() => {
+    try {
+      return new URL(url);
+    } catch {
+      return null;
+    }
+  })();
+  const isPooledConnection = parsed?.hostname.endsWith(".pooler.supabase.com") ?? false;
+  const prepare = process.env.PAPERCLIP_DB_PREPARE === "false" ? false : !isPooledConnection;
+  const sql = postgres(url, {
+    prepare,
+    connection: {
+      search_path: "public",
+    },
+  });
   return drizzlePg(sql, { schema });
 }
 

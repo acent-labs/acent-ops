@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "@/lib/router";
 import { authApi } from "../api/auth";
+import { healthApi } from "../api/health";
 import { queryKeys } from "../lib/queryKeys";
 import { getRememberedInvitePath } from "../lib/invite-memory";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,12 @@ export function AuthPage() {
     queryFn: () => authApi.getSession(),
     retry: false,
   });
+  const { data: health } = useQuery({
+    queryKey: queryKeys.health,
+    queryFn: () => healthApi.get(),
+    retry: false,
+  });
+  const googleAuthEnabled = health?.authProviders?.google === true;
 
   useEffect(() => {
     if (session) {
@@ -56,6 +63,16 @@ export function AuthPage() {
     },
     onError: (err) => {
       setError(err instanceof Error ? err.message : "Authentication failed");
+    },
+  });
+
+  const googleMutation = useMutation({
+    mutationFn: async () => {
+      const { url } = await authApi.signInGoogle({ callbackURL: nextPath });
+      window.location.assign(url);
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Google authentication failed");
     },
   });
 
@@ -91,8 +108,30 @@ export function AuthPage() {
               : "Create an account for this instance. Email confirmation is not required in v1."}
           </p>
 
+          {googleAuthEnabled && (
+            <div className="mt-6">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                disabled={googleMutation.isPending}
+                onClick={() => {
+                  setError(null);
+                  googleMutation.mutate();
+                }}
+              >
+                {googleMutation.isPending ? "Redirecting..." : "Continue with Google"}
+              </Button>
+              <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
+                <div className="h-px flex-1 bg-border" />
+                <span>or</span>
+                <div className="h-px flex-1 bg-border" />
+              </div>
+            </div>
+          )}
+
           <form
-            className="mt-6 space-y-4"
+            className={`${googleAuthEnabled ? "" : "mt-6"} space-y-4`}
             method="post"
             action={mode === "sign_up" ? "/api/auth/sign-up/email" : "/api/auth/sign-in/email"}
             onSubmit={(event) => {

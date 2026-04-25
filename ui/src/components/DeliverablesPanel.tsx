@@ -71,6 +71,10 @@ const actionLabels: Record<WorkProductSteeringAction, string> = {
   archive: "Archive",
 };
 
+function ActionButtonLabel({ children }: { children: string }) {
+  return <span className="min-w-0 truncate leading-none">{children}</span>;
+}
+
 function metadataFor(item: DeliverableListItem): IssueDeliverableMetadata {
   const value = item.workProduct.metadata;
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -154,88 +158,93 @@ function DeliverableCard({
   const sourceHref = normalizeOpenHref(issueHref(item));
   const sourceSystem = typeof meta.sourceSystem === "string" ? meta.sourceSystem : item.workProduct.provider;
   const reviewRequest = typeof meta.reviewRequest === "string" ? meta.reviewRequest : "no_action";
-  const actionButtonClass = "h-8 min-h-8 px-3 text-sm [&_svg:not([class*='size-'])]:size-3.5";
+  const actionButtonClass =
+    "h-9 min-h-9 w-full min-w-0 shrink overflow-hidden px-2.5 text-[13px] leading-none [&_svg:not([class*='size-'])]:size-3.5 sm:h-8 sm:min-h-8 sm:w-auto sm:px-2 sm:text-xs";
 
   return (
     <article
       className={cn(
-        "border border-border bg-card p-4",
+        "min-w-0 max-w-full overflow-hidden border border-border bg-card p-3 sm:p-4",
         item.workProduct.isPrimary && "border-primary/50 bg-primary/5",
       )}
     >
-      <div className="flex flex-col gap-3">
-        <div className="flex items-start justify-between gap-3">
+      <div className="flex min-w-0 flex-col gap-3">
+        <div className="flex min-w-0 items-start justify-between gap-2 sm:gap-3">
           <div className="min-w-0 space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              {item.workProduct.isPrimary && <Badge variant="default">Primary</Badge>}
-              <Badge variant={statusVariant(item.workProduct.status)}>
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
+              {item.workProduct.isPrimary && <Badge variant="default" className="max-w-full">Primary</Badge>}
+              <Badge variant={statusVariant(item.workProduct.status)} className="max-w-[9rem]">
                 {statusLabels[item.workProduct.status] ?? item.workProduct.status}
               </Badge>
-              <Badge variant="outline">{reviewLabels[item.workProduct.reviewState] ?? item.workProduct.reviewState}</Badge>
-              {meta.deliverableKind && <Badge variant="ghost">{meta.deliverableKind}</Badge>}
-              {meta.channel && <Badge variant="ghost">{meta.channel}</Badge>}
+              <Badge variant="outline" className="max-w-[10rem]">
+                {reviewLabels[item.workProduct.reviewState] ?? item.workProduct.reviewState}
+              </Badge>
+              {meta.deliverableKind && <Badge variant="ghost" className="max-w-[9rem] truncate">{meta.deliverableKind}</Badge>}
+              {meta.channel && <Badge variant="ghost" className="max-w-[7rem] truncate">{meta.channel}</Badge>}
             </div>
             <h3 className="truncate text-sm font-semibold">{item.workProduct.title}</h3>
             {item.workProduct.summary && (
-              <p className="line-clamp-2 text-sm text-muted-foreground">{item.workProduct.summary}</p>
+              <p className="line-clamp-2 break-words text-sm text-muted-foreground">{item.workProduct.summary}</p>
             )}
           </div>
           <FileText className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
         </div>
 
-        <div className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
-          <span>Source: {sourceSystem}</span>
-          <span>Review: {reviewRequest}</span>
-          <span>
+        <div className="grid min-w-0 gap-1 text-xs text-muted-foreground sm:grid-cols-2">
+          <span className="min-w-0 truncate">Source: {sourceSystem}</span>
+          <span className="min-w-0 truncate">Review: {reviewRequest}</span>
+          <span className="min-w-0 truncate">
             Owner: {item.ownerAgent ? `${item.ownerAgent.name} (${item.ownerAgent.role})` : "Unassigned"}
           </span>
-          <Link to={sourceHref} className="truncate underline underline-offset-2">
+          <Link to={sourceHref} className="min-w-0 truncate underline underline-offset-2">
             {item.issue.identifier ?? item.issue.id.slice(0, 8)} · {item.issue.title}
           </Link>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="grid min-w-0 grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
           {isExternalHref(href) ? (
-            <a href={href} target="_blank" rel="noreferrer">
+            <a href={href} target="_blank" rel="noreferrer" className="min-w-0 sm:w-auto">
               <Button size="xs" variant="outline" className={actionButtonClass}>
                 <ExternalLink className="h-3.5 w-3.5" />
-                Open
+                <ActionButtonLabel>Open</ActionButtonLabel>
               </Button>
             </a>
           ) : (
             <Button size="xs" variant="outline" className={actionButtonClass} asChild>
               <Link to={href}>
                 <FileText className="h-3.5 w-3.5" />
-                Open
+                <ActionButtonLabel>Open</ActionButtonLabel>
               </Link>
             </Button>
           )}
           <Button size="xs" variant="outline" className={actionButtonClass} asChild>
-            <Link to={sourceHref}>Source issue</Link>
+            <Link to={sourceHref}>
+              <ActionButtonLabel>Source issue</ActionButtonLabel>
+            </Link>
           </Button>
           {!compact && (
             <>
               <Button size="xs" className={actionButtonClass} onClick={() => onAction(item, "approve")}>
                 <ShieldCheck className="h-3.5 w-3.5" />
-                {approveActionLabel(item)}
+                <ActionButtonLabel>{approveActionLabel(item)}</ActionButtonLabel>
               </Button>
               <Button size="xs" variant="outline" className={actionButtonClass} onClick={() => onAction(item, "request_changes")}>
-                Request changes
+                <ActionButtonLabel>Request changes</ActionButtonLabel>
               </Button>
               <Button size="xs" variant="outline" className={actionButtonClass} onClick={() => onAction(item, "comment")}>
                 <MessageSquare className="h-3.5 w-3.5" />
-                Ask
+                <ActionButtonLabel>Ask</ActionButtonLabel>
               </Button>
               {!shouldPublishOnApproval(item) && (
                 <Button size="xs" variant="outline" className={actionButtonClass} onClick={() => onAction(item, "queue_for_publish")}>
                   <UploadCloud className="h-3.5 w-3.5" />
-                  Queue
+                  <ActionButtonLabel>Queue</ActionButtonLabel>
                 </Button>
               )}
               {canPublishViaApi(item) && (
                 <Button size="xs" className={actionButtonClass} onClick={() => onAction(item, "publish_via_api")}>
                   <Send className="h-3.5 w-3.5" />
-                  API Publish
+                  <ActionButtonLabel>API Publish</ActionButtonLabel>
                 </Button>
               )}
               <Button
@@ -247,11 +256,11 @@ function DeliverableCard({
                 title={canSendToOpenClaw ? "Send to OpenClaw" : "OpenClaw agent required"}
               >
                 <Send className="h-3.5 w-3.5" />
-                OpenClaw
+                <ActionButtonLabel>OpenClaw</ActionButtonLabel>
               </Button>
               <Button size="xs" variant="ghost" className={actionButtonClass} onClick={() => onAction(item, "archive")}>
                 <Archive className="h-3.5 w-3.5" />
-                Archive
+                <ActionButtonLabel>Archive</ActionButtonLabel>
               </Button>
             </>
           )}

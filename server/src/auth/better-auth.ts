@@ -12,6 +12,10 @@ import {
 } from "@paperclipai/db";
 import type { Config } from "../config.js";
 
+export type AuthProviderFlags = {
+  google: boolean;
+};
+
 export type BetterAuthSessionUser = {
   id: string;
   email?: string | null;
@@ -65,6 +69,12 @@ export function deriveAuthTrustedOrigins(config: Config): string[] {
   return Array.from(trustedOrigins);
 }
 
+export function resolveAuthProviderFlags(): AuthProviderFlags {
+  return {
+    google: Boolean(process.env.GOOGLE_CLIENT_ID?.trim() && process.env.GOOGLE_CLIENT_SECRET?.trim()),
+  };
+}
+
 export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins?: string[]): BetterAuthInstance {
   const baseUrl = config.authBaseUrlMode === "explicit" ? config.authPublicBaseUrl : undefined;
   const secret = process.env.BETTER_AUTH_SECRET ?? process.env.PAPERCLIP_AGENT_JWT_SECRET;
@@ -78,6 +88,8 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins?
 
   const publicUrl = process.env.PAPERCLIP_PUBLIC_URL ?? baseUrl;
   const isHttpOnly = publicUrl ? publicUrl.startsWith("http://") : false;
+  const googleClientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
 
   const authConfig = {
     baseURL: baseUrl,
@@ -97,6 +109,17 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins?
       requireEmailVerification: false,
       disableSignUp: config.authDisableSignUp,
     },
+    ...(googleClientId && googleClientSecret
+      ? {
+          socialProviders: {
+            google: {
+              clientId: googleClientId,
+              clientSecret: googleClientSecret,
+              prompt: "select_account" as const,
+            },
+          },
+        }
+      : {}),
     ...(isHttpOnly ? { advanced: { useSecureCookies: false } } : {}),
   };
 

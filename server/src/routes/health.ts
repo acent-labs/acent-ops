@@ -7,6 +7,7 @@ import { readPersistedDevServerStatus, toDevServerHealthStatus } from "../dev-se
 import { logger } from "../middleware/logger.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import { serverVersion } from "../version.js";
+import type { AuthProviderFlags } from "../auth/better-auth.js";
 
 function shouldExposeFullHealthDetails(
   actorType: "none" | "board" | "agent" | null | undefined,
@@ -22,11 +23,13 @@ export function healthRoutes(
     deploymentMode: DeploymentMode;
     deploymentExposure: DeploymentExposure;
     authReady: boolean;
+    authProviders?: AuthProviderFlags;
     companyDeletionEnabled: boolean;
   } = {
     deploymentMode: "local_trusted",
     deploymentExposure: "private",
     authReady: true,
+    authProviders: { google: false },
     companyDeletionEnabled: true,
   },
 ) {
@@ -109,6 +112,7 @@ export function healthRoutes(
       res.json({
         status: "ok",
         deploymentMode: opts.deploymentMode,
+        authProviders: opts.authProviders ?? { google: false },
         bootstrapStatus,
         bootstrapInviteActive,
       });
@@ -121,6 +125,7 @@ export function healthRoutes(
       deploymentMode: opts.deploymentMode,
       deploymentExposure: opts.deploymentExposure,
       authReady: opts.authReady,
+      authProviders: opts.authProviders ?? { google: false },
       bootstrapStatus,
       bootstrapInviteActive,
       features: {

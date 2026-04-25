@@ -52,7 +52,7 @@ import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
 import { createPluginHostServiceCleanup } from "./services/plugin-host-service-cleanup.js";
 import { pluginRegistryService } from "./services/plugin-registry.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
-import type { BetterAuthSessionResult } from "./auth/better-auth.js";
+import type { AuthProviderFlags, BetterAuthSessionResult } from "./auth/better-auth.js";
 import { createCachedViteHtmlRenderer } from "./vite-html-renderer.js";
 
 type UiMode = "none" | "static" | "vite-dev";
@@ -119,6 +119,7 @@ export async function createApp(
     allowedHostnames: string[];
     bindHost: string;
     authReady: boolean;
+    authProviders?: AuthProviderFlags;
     companyDeletionEnabled: boolean;
     instanceId?: string;
     hostVersion?: string;
@@ -173,6 +174,7 @@ export async function createApp(
       deploymentMode: opts.deploymentMode,
       deploymentExposure: opts.deploymentExposure,
       authReady: opts.authReady,
+      authProviders: opts.authProviders,
       companyDeletionEnabled: opts.companyDeletionEnabled,
     }),
   );

@@ -150,9 +150,9 @@ export function CommandCenter() {
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
+    <div className="min-w-0 max-w-full space-y-4 overflow-x-hidden sm:space-y-5">
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">Command Center</h1>
           <p className="text-sm text-muted-foreground">
             Paperclip이 만든 산출물과 OpenClaw 실행 증거를 검토하고 바로 steering합니다.
@@ -176,8 +176,11 @@ export function CommandCenter() {
         </div>
       )}
 
-      <Tabs value={tab} onValueChange={(value) => setTab(value as CommandCenterTab)} className="space-y-4">
-        <TabsList variant="line" className="w-full justify-start">
+      <Tabs value={tab} onValueChange={(value) => setTab(value as CommandCenterTab)} className="min-w-0 space-y-4">
+        <TabsList
+          variant="line"
+          className="w-full max-w-full justify-start overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
           <TabsTrigger value="review">
             <ShieldCheck className="h-4 w-4" />
             Review Inbox
@@ -196,17 +199,17 @@ export function CommandCenter() {
           </TabsTrigger>
         </TabsList>
 
-        <div className="flex flex-col gap-3 border border-border bg-card p-3 sm:flex-row sm:items-end">
+        <div className="flex min-w-0 flex-col gap-3 overflow-hidden border border-border bg-card p-3 sm:flex-row sm:items-end">
           <div className="min-w-0 flex-1">
             <h2 className="text-sm font-semibold">{titleForTab(tab)}</h2>
             <p className="text-xs text-muted-foreground">{descriptionForTab(tab)}</p>
           </div>
-          <label className="grid gap-1 text-xs text-muted-foreground">
+          <label className="grid min-w-0 gap-1 text-xs text-muted-foreground">
             Kind
             <select
               value={kind}
               onChange={(event) => setKind(event.target.value)}
-              className="h-8 min-w-36 cursor-pointer border border-input bg-background px-2 text-sm text-foreground"
+              className="h-8 min-w-0 cursor-pointer border border-input bg-background px-2 text-sm text-foreground sm:min-w-36"
             >
               <option value="">All</option>
               <option value="briefing">Briefing</option>
@@ -217,12 +220,12 @@ export function CommandCenter() {
               <option value="action_evidence">Action evidence</option>
             </select>
           </label>
-          <label className="grid gap-1 text-xs text-muted-foreground">
+          <label className="grid min-w-0 gap-1 text-xs text-muted-foreground">
             Channel
             <select
               value={channel}
               onChange={(event) => setChannel(event.target.value)}
-              className="h-8 min-w-32 cursor-pointer border border-input bg-background px-2 text-sm text-foreground"
+              className="h-8 min-w-0 cursor-pointer border border-input bg-background px-2 text-sm text-foreground sm:min-w-32"
             >
               <option value="">All</option>
               <option value="x">X</option>

@@ -41,6 +41,7 @@ import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
 import { maybePersistWorktreeRuntimePorts } from "./worktree-config.js";
 import { initTelemetry, getTelemetryClient } from "./telemetry.js";
+import type { AuthProviderFlags } from "./auth/better-auth.js";
 
 type BetterAuthSessionUser = {
   id: string;
@@ -465,6 +466,7 @@ export async function startServer(): Promise<StartedServer> {
   let resolveSessionFromHeaders:
     | ((headers: Headers) => Promise<BetterAuthSessionResult | null>)
     | undefined;
+  let authProviders: AuthProviderFlags | undefined;
   if (config.deploymentMode === "local_trusted") {
     await ensureLocalTrustedBoardPrincipal(db as any);
   }
@@ -473,9 +475,11 @@ export async function startServer(): Promise<StartedServer> {
       createBetterAuthHandler,
       createBetterAuthInstance,
       deriveAuthTrustedOrigins,
+      resolveAuthProviderFlags,
       resolveBetterAuthSession,
       resolveBetterAuthSessionFromHeaders,
     } = await import("./auth/better-auth.js");
+    authProviders = resolveAuthProviderFlags();
     const derivedTrustedOrigins = deriveAuthTrustedOrigins(config);
     const envTrustedOrigins = (process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? "")
       .split(",")
@@ -532,6 +536,7 @@ export async function startServer(): Promise<StartedServer> {
     bindHost: config.host,
     authReady,
     companyDeletionEnabled: config.companyDeletionEnabled,
+    authProviders,
     betterAuthHandler,
     resolveSession,
   });
