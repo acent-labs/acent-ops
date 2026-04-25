@@ -92,6 +92,27 @@ function primaryHref(item: DeliverableListItem) {
   return issueHref(item);
 }
 
+function isLoopbackHost(hostname: string) {
+  return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+}
+
+function isPaperclipInternalPath(pathname: string) {
+  return pathname === "/issues" || pathname.startsWith("/issues/") || pathname.startsWith("/api/assets/");
+}
+
+function normalizeOpenHref(href: string) {
+  if (!/^https?:\/\//i.test(href)) return href;
+  try {
+    const url = new URL(href);
+    if (isLoopbackHost(url.hostname) || isPaperclipInternalPath(url.pathname)) {
+      return `${url.pathname}${url.search}${url.hash}`;
+    }
+  } catch {
+    return href;
+  }
+  return href;
+}
+
 function isExternalHref(href: string) {
   return /^https?:\/\//i.test(href);
 }
@@ -114,7 +135,7 @@ function shouldPublishOnApproval(item: DeliverableListItem) {
 }
 
 function approveActionLabel(item: DeliverableListItem) {
-  return shouldPublishOnApproval(item) ? "Approve & Publish" : actionLabels.approve;
+  return shouldPublishOnApproval(item) ? "Approve & Publish" : "Approve & Complete";
 }
 
 function DeliverableCard({
@@ -129,9 +150,11 @@ function DeliverableCard({
   onAction: (item: DeliverableListItem, action: WorkProductSteeringAction) => void;
 }) {
   const meta = metadataFor(item);
-  const href = primaryHref(item);
+  const href = normalizeOpenHref(primaryHref(item));
+  const sourceHref = normalizeOpenHref(issueHref(item));
   const sourceSystem = typeof meta.sourceSystem === "string" ? meta.sourceSystem : item.workProduct.provider;
   const reviewRequest = typeof meta.reviewRequest === "string" ? meta.reviewRequest : "no_action";
+  const actionButtonClass = "h-8 min-h-8 px-3 text-sm [&_svg:not([class*='size-'])]:size-3.5";
 
   return (
     <article
@@ -166,7 +189,7 @@ function DeliverableCard({
           <span>
             Owner: {item.ownerAgent ? `${item.ownerAgent.name} (${item.ownerAgent.role})` : "Unassigned"}
           </span>
-          <Link to={issueHref(item)} className="truncate underline underline-offset-2">
+          <Link to={sourceHref} className="truncate underline underline-offset-2">
             {item.issue.identifier ?? item.issue.id.slice(0, 8)} · {item.issue.title}
           </Link>
         </div>
@@ -174,43 +197,43 @@ function DeliverableCard({
         <div className="flex flex-wrap items-center gap-2">
           {isExternalHref(href) ? (
             <a href={href} target="_blank" rel="noreferrer">
-              <Button size="xs" variant="outline">
+              <Button size="xs" variant="outline" className={actionButtonClass}>
                 <ExternalLink className="h-3.5 w-3.5" />
                 Open
               </Button>
             </a>
           ) : (
-            <Button size="xs" variant="outline" asChild>
+            <Button size="xs" variant="outline" className={actionButtonClass} asChild>
               <Link to={href}>
                 <FileText className="h-3.5 w-3.5" />
                 Open
               </Link>
             </Button>
           )}
-          <Button size="xs" variant="outline" asChild>
-            <Link to={issueHref(item)}>Source issue</Link>
+          <Button size="xs" variant="outline" className={actionButtonClass} asChild>
+            <Link to={sourceHref}>Source issue</Link>
           </Button>
           {!compact && (
             <>
-              <Button size="xs" onClick={() => onAction(item, "approve")}>
+              <Button size="xs" className={actionButtonClass} onClick={() => onAction(item, "approve")}>
                 <ShieldCheck className="h-3.5 w-3.5" />
                 {approveActionLabel(item)}
               </Button>
-              <Button size="xs" variant="outline" onClick={() => onAction(item, "request_changes")}>
+              <Button size="xs" variant="outline" className={actionButtonClass} onClick={() => onAction(item, "request_changes")}>
                 Request changes
               </Button>
-              <Button size="xs" variant="outline" onClick={() => onAction(item, "comment")}>
+              <Button size="xs" variant="outline" className={actionButtonClass} onClick={() => onAction(item, "comment")}>
                 <MessageSquare className="h-3.5 w-3.5" />
                 Ask
               </Button>
               {!shouldPublishOnApproval(item) && (
-                <Button size="xs" variant="outline" onClick={() => onAction(item, "queue_for_publish")}>
+                <Button size="xs" variant="outline" className={actionButtonClass} onClick={() => onAction(item, "queue_for_publish")}>
                   <UploadCloud className="h-3.5 w-3.5" />
                   Queue
                 </Button>
               )}
               {canPublishViaApi(item) && (
-                <Button size="xs" onClick={() => onAction(item, "publish_via_api")}>
+                <Button size="xs" className={actionButtonClass} onClick={() => onAction(item, "publish_via_api")}>
                   <Send className="h-3.5 w-3.5" />
                   API Publish
                 </Button>
@@ -218,6 +241,7 @@ function DeliverableCard({
               <Button
                 size="xs"
                 variant="outline"
+                className={actionButtonClass}
                 onClick={() => onAction(item, "send_to_openclaw")}
                 disabled={!canSendToOpenClaw}
                 title={canSendToOpenClaw ? "Send to OpenClaw" : "OpenClaw agent required"}
@@ -225,7 +249,7 @@ function DeliverableCard({
                 <Send className="h-3.5 w-3.5" />
                 OpenClaw
               </Button>
-              <Button size="xs" variant="ghost" onClick={() => onAction(item, "archive")}>
+              <Button size="xs" variant="ghost" className={actionButtonClass} onClick={() => onAction(item, "archive")}>
                 <Archive className="h-3.5 w-3.5" />
                 Archive
               </Button>

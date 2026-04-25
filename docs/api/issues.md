@@ -203,9 +203,11 @@ POST /api/work-products/{workProductId}/steering
 
 Supported actions: `comment`, `approve`, `request_changes`, `queue_for_publish`, `publish_via_api`, `send_to_openclaw`, `mark_published`, `archive`.
 
+For non-publish deliverables, `approve` is the founder acceptance gate: it marks the work product as `approved` and, when the source issue is `in_review`, completes that issue as `done`. `request_changes` marks the work product as `changes_requested` and returns an `in_review` or already-`done` source issue to `todo` so the task is visibly back in a work state.
+
 `publish_via_api` currently supports direct publish for channels `x` and `blog`. For `x`, the host executes the configured X plugin tool, marks the source deliverable as `published`, and registers an `action_evidence` work product with the resulting URL when available. X documents that contain numbered sections such as `1/`, `2/`, separated by `---`, are published through the thread tool instead of being sent as one long post.
 
-For `x` or `blog` deliverables registered with `metadata.reviewRequest = "publish"`, `approve` acts as an approve-and-publish step: board approval publishes through the configured API immediately instead of waiting in the publish queue. Blog publish requires `metadata.channel = "blog"` and either `metadata.blogCategoryId`, `metadata.blogCategorySlug`, `PAPERCLIP_BLOG_DEFAULT_CATEGORY_ID`, or `PAPERCLIP_BLOG_DEFAULT_CATEGORY_SLUG`; the server also needs `PAPERCLIP_BLOG_PUBLISH_URL`, `PAPERCLIP_BLOG_PUBLISH_TOKEN`, and optionally `PAPERCLIP_BLOG_PUBLIC_ORIGIN`.
+For `x` or `blog` deliverables registered with `metadata.reviewRequest = "publish"`, `approve` acts as an approve-and-publish step: board approval publishes through the configured API immediately instead of waiting in the publish queue, then completes an `in_review` source issue as `done` after a successful publish. Blog publish requires `metadata.channel = "blog"` and either `metadata.blogCategoryId`, `metadata.blogCategorySlug`, `PAPERCLIP_BLOG_DEFAULT_CATEGORY_ID`, or `PAPERCLIP_BLOG_DEFAULT_CATEGORY_SLUG`; the server also needs `PAPERCLIP_BLOG_PUBLISH_URL`, `PAPERCLIP_BLOG_PUBLISH_TOKEN`, and optionally `PAPERCLIP_BLOG_PUBLIC_ORIGIN`.
 
 ## Attachments
 

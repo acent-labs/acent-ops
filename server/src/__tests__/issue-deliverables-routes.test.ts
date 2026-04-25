@@ -6,6 +6,7 @@ const mockIssueService = vi.hoisted(() => ({
   getById: vi.fn(),
   getByIdentifier: vi.fn(),
   addComment: vi.fn(),
+  update: vi.fn(),
   create: vi.fn(),
 }));
 
@@ -160,6 +161,7 @@ describe("issue deliverable routes", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
+    mockIssueService.update.mockResolvedValue({ ...sourceIssue, status: "done" });
     mockWorkProductService.getById.mockResolvedValue(workProduct);
     mockWorkProductService.update.mockResolvedValue({ ...workProduct, status: "approved", reviewState: "approved" });
     mockWorkProductService.createForIssue.mockResolvedValue({
@@ -265,8 +267,9 @@ describe("issue deliverable routes", () => {
     expect(res.body[0].workProduct.id).toBe(workProduct.id);
   });
 
-  it("approves a deliverable and records a steering comment", async () => {
+  it("approves a deliverable, completes an in-review source issue, and records a steering comment", async () => {
     const app = await createApp();
+    mockIssueService.getById.mockResolvedValue({ ...sourceIssue, status: "in_review" });
 
     await request(app)
       .post(`/api/work-products/${workProduct.id}/steering`)
@@ -282,6 +285,11 @@ describe("issue deliverable routes", () => {
       "Approved for publish queue.",
       expect.objectContaining({ userId: "local-board" }),
     );
+    expect(mockIssueService.update).toHaveBeenCalledWith(sourceIssue.id, {
+      status: "done",
+      actorAgentId: null,
+      actorUserId: "local-board",
+    });
   });
 
   it("approves and immediately publishes X deliverables marked for publish review", async () => {

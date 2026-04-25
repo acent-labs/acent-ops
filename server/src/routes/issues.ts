@@ -1436,9 +1436,47 @@ export function issueRoutes(
     const commentText = typeof req.body.comment === "string" ? req.body.comment.trim() : "";
     const metadataChannel = typeof currentMetadata.channel === "string" ? currentMetadata.channel : undefined;
     const reviewRequest = typeof currentMetadata.reviewRequest === "string" ? currentMetadata.reviewRequest : undefined;
+    const issueActorPatch = {
+      actorAgentId: actor.agentId ?? null,
+      actorUserId: actor.actorType === "user" ? actor.actorId : null,
+    };
 
     function shouldPublishOnApproval(channel: string | undefined) {
       return (channel === "x" || channel === "blog") && reviewRequest === "publish" && workProduct.status !== "published";
+    }
+
+    async function updateSourceIssueStatusAfterReview(status: "done" | "todo", source: string) {
+      if (issue.status === "cancelled" || issue.status === status) return issue;
+      if (status === "done" && issue.status !== "in_review") return issue;
+      if (status === "todo" && issue.status !== "in_review" && issue.status !== "done") return issue;
+
+      const updatedIssue = await svc.update(issue.id, {
+        status,
+        ...issueActorPatch,
+      });
+      if (!updatedIssue) throw notFound("Issue not found");
+
+      await logActivity(db, {
+        companyId: issue.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action: "issue.updated",
+        entityType: "issue",
+        entityId: issue.id,
+        details: {
+          identifier: issue.identifier,
+          issueTitle: issue.title,
+          changedKeys: ["status"],
+          previousStatus: issue.status,
+          nextStatus: status,
+          source,
+          workProductId: workProduct.id,
+        },
+      });
+
+      return updatedIssue;
     }
 
     async function publishDeliverableViaApi(params?: {
@@ -1774,19 +1812,22 @@ export function issueRoutes(
           approvedByBoard: true,
           commentOverride: commentText || undefined,
         });
-        res.json({ workProduct: product, comment, evidenceWorkProduct, publishResult });
+        const updatedIssue = await updateSourceIssueStatusAfterReview("done", "work_product_steering.approve_publish");
+        res.json({ workProduct: product, comment, evidenceWorkProduct, publishResult, issue: updatedIssue });
         return;
       }
       const product = await updateProduct({ status: "approved", reviewState: "approved" });
       const comment = await addSteeringComment(commentText || `Approved deliverable: ${workProduct.title}`);
-      res.json({ workProduct: product, comment });
+      const updatedIssue = await updateSourceIssueStatusAfterReview("done", "work_product_steering.approve");
+      res.json({ workProduct: product, comment, issue: updatedIssue });
       return;
     }
 
     if (req.body.action === "request_changes") {
       const product = await updateProduct({ status: "changes_requested", reviewState: "changes_requested" });
       const comment = await addSteeringComment(commentText || `Changes requested for deliverable: ${workProduct.title}`);
-      res.json({ workProduct: product, comment });
+      const updatedIssue = await updateSourceIssueStatusAfterReview("todo", "work_product_steering.request_changes");
+      res.json({ workProduct: product, comment, issue: updatedIssue });
       return;
     }
 
