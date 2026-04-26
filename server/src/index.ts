@@ -16,8 +16,6 @@ import {
   applyPendingMigrations,
   createEmbeddedPostgresLogBuffer,
   reconcilePendingMigrationHistory,
-  formatDatabaseBackupResult,
-  runDatabaseBackup,
   authUsers,
   companies,
   companyMemberships,
@@ -647,59 +645,6 @@ export async function startServer(): Promise<StartedServer> {
     }, config.heartbeatSchedulerIntervalMs);
   }
   
-  if (config.databaseBackupEnabled) {
-    const backupIntervalMs = config.databaseBackupIntervalMinutes * 60 * 1000;
-    const settingsSvc = instanceSettingsService(db);
-    let backupInFlight = false;
-
-    const runScheduledBackup = async () => {
-      if (backupInFlight) {
-        logger.warn("Skipping scheduled database backup because a previous backup is still running");
-        return;
-      }
-
-      backupInFlight = true;
-      try {
-        // Read retention from Instance Settings (DB) so changes take effect without restart
-        const generalSettings = await settingsSvc.getGeneral();
-        const retention = generalSettings.backupRetention;
-
-        const result = await runDatabaseBackup({
-          connectionString: activeDatabaseConnectionString,
-          backupDir: config.databaseBackupDir,
-          retention,
-          filenamePrefix: "paperclip",
-        });
-        logger.info(
-          {
-            backupFile: result.backupFile,
-            sizeBytes: result.sizeBytes,
-            prunedCount: result.prunedCount,
-            backupDir: config.databaseBackupDir,
-            retention,
-          },
-          `Automatic database backup complete: ${formatDatabaseBackupResult(result)}`,
-        );
-      } catch (err) {
-        logger.error({ err, backupDir: config.databaseBackupDir }, "Automatic database backup failed");
-      } finally {
-        backupInFlight = false;
-      }
-    };
-
-    logger.info(
-      {
-        intervalMinutes: config.databaseBackupIntervalMinutes,
-        retentionSource: "instance-settings-db",
-        backupDir: config.databaseBackupDir,
-      },
-      "Automatic database backups enabled",
-    );
-    setInterval(() => {
-      void runScheduledBackup();
-    }, backupIntervalMs);
-  }
-  
   // Wait for external adapters to finish loading before accepting requests.
   // Without this, adapter type validation (assertKnownAdapterType) would
   // reject valid external adapter types during the startup loading window.
@@ -741,10 +686,6 @@ export async function startServer(): Promise<StartedServer> {
         migrationSummary,
         heartbeatSchedulerEnabled: config.heartbeatSchedulerEnabled,
         heartbeatSchedulerIntervalMs: config.heartbeatSchedulerIntervalMs,
-        databaseBackupEnabled: config.databaseBackupEnabled,
-        databaseBackupIntervalMinutes: config.databaseBackupIntervalMinutes,
-        databaseBackupRetentionDays: config.databaseBackupRetentionDays,
-        databaseBackupDir: config.databaseBackupDir,
       });
 
       const boardClaimUrl = getBoardClaimWarningUrl(config.host, listenPort);
@@ -814,7 +755,18 @@ function isMainModule(metaUrl: string): boolean {
   }
 }
 
+function installProcessSafetyNet(): void {
+  process.on("unhandledRejection", (reason) => {
+    const err = reason instanceof Error ? reason : new Error(String(reason));
+    logger.error({ err }, "Unhandled promise rejection (suppressed to keep server alive)");
+  });
+  process.on("uncaughtException", (err) => {
+    logger.error({ err }, "Uncaught exception (suppressed to keep server alive)");
+  });
+}
+
 if (isMainModule(import.meta.url)) {
+  installProcessSafetyNet();
   void startServer().catch((err) => {
     logger.error({ err }, "Paperclip server failed to start");
     process.exit(1);

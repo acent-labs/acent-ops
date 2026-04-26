@@ -23,7 +23,6 @@ import {
   validateConfiguredBindMode,
 } from "@paperclipai/shared";
 import {
-  resolveDefaultBackupDir,
   resolveDefaultEmbeddedPostgresDir,
   resolveDefaultSecretsKeyFilePath,
   resolveDefaultStorageDir,
@@ -64,10 +63,6 @@ export interface Config {
   databaseUrl: string | undefined;
   embeddedPostgresDataDir: string;
   embeddedPostgresPort: number;
-  databaseBackupEnabled: boolean;
-  databaseBackupIntervalMinutes: number;
-  databaseBackupRetentionDays: number;
-  databaseBackupDir: string;
   serveUi: boolean;
   uiDevMiddleware: boolean;
   secretsProvider: SecretProvider;
@@ -116,7 +111,6 @@ export function loadConfig(): Config {
     fileDatabaseMode === "postgres"
       ? fileConfig?.database.connectionString
       : undefined;
-  const fileDatabaseBackup = fileConfig?.database.backup;
   const fileSecrets = fileConfig?.secrets;
   const fileStorage = fileConfig?.storage;
   const strictModeFromEnv = process.env.PAPERCLIP_SECRETS_STRICT_MODE;
@@ -243,27 +237,6 @@ export function loadConfig(): Config {
     companyDeletionEnvRaw !== undefined
       ? companyDeletionEnvRaw === "true"
       : deploymentMode === "local_trusted";
-  const databaseBackupEnabled =
-    process.env.PAPERCLIP_DB_BACKUP_ENABLED !== undefined
-      ? process.env.PAPERCLIP_DB_BACKUP_ENABLED === "true"
-      : (fileDatabaseBackup?.enabled ?? true);
-  const databaseBackupIntervalMinutes = Math.max(
-    1,
-    Number(process.env.PAPERCLIP_DB_BACKUP_INTERVAL_MINUTES) ||
-      fileDatabaseBackup?.intervalMinutes ||
-      60,
-  );
-  const databaseBackupRetentionDays = Math.max(
-    1,
-    Number(process.env.PAPERCLIP_DB_BACKUP_RETENTION_DAYS) ||
-      fileDatabaseBackup?.retentionDays ||
-      7,
-  );
-  const databaseBackupDir = resolveHomeAwarePath(
-    process.env.PAPERCLIP_DB_BACKUP_DIR ??
-      fileDatabaseBackup?.dir ??
-      resolveDefaultBackupDir(),
-  );
   const bindValidationErrors = validateConfiguredBindMode({
     deploymentMode,
     deploymentExposure,
@@ -301,10 +274,6 @@ export function loadConfig(): Config {
       fileConfig?.database.embeddedPostgresDataDir ?? resolveDefaultEmbeddedPostgresDir(),
     ),
     embeddedPostgresPort: fileConfig?.database.embeddedPostgresPort ?? 54329,
-    databaseBackupEnabled,
-    databaseBackupIntervalMinutes,
-    databaseBackupRetentionDays,
-    databaseBackupDir,
     serveUi:
       process.env.SERVE_UI !== undefined
         ? process.env.SERVE_UI === "true"

@@ -10,15 +10,44 @@ const MIGRATIONS_FOLDER = fileURLToPath(new URL("./migrations", import.meta.url)
 const DRIZZLE_MIGRATIONS_TABLE = "__drizzle_migrations";
 const MIGRATIONS_JOURNAL_JSON = fileURLToPath(new URL("./migrations/meta/_journal.json", import.meta.url));
 
-function createUtilitySql(url: string) {
-  return postgres(url, { max: 1, onnotice: () => {} });
-}
-
 function envPositiveInt(name: string, fallback: number): number {
   const raw = process.env[name]?.trim();
   if (!raw) return fallback;
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseDbUrl(url: string): URL | null {
+  try {
+    return new URL(url);
+  } catch {
+    return null;
+  }
+}
+
+function isSupavisorTransactionPooler(parsed: URL | null): boolean {
+  if (!parsed) return false;
+  if (!parsed.hostname.endsWith(".pooler.supabase.com")) return false;
+  // Supavisor exposes session mode on 5432 (prepared statements + session state OK)
+  // and transaction mode on 6543 (prepared statements NOT supported, no session state).
+  return parsed.port === "6543";
+}
+
+function shouldPrepare(parsed: URL | null): boolean {
+  const override = process.env.PAPERCLIP_DB_PREPARE;
+  if (override === "false") return false;
+  if (override === "true") return true;
+  return !isSupavisorTransactionPooler(parsed);
+}
+
+function createUtilitySql(url: string) {
+  const parsed = parseDbUrl(url);
+  return postgres(url, {
+    max: 1,
+    onnotice: () => {},
+    prepare: shouldPrepare(parsed),
+    connect_timeout: envPositiveInt("PAPERCLIP_DB_CONNECT_TIMEOUT_SECONDS", 10),
+  });
 }
 
 function isSafeIdentifier(value: string): boolean {
@@ -53,28 +82,24 @@ export type MigrationState =
     };
 
 export function createDb(url: string) {
-  const parsed = (() => {
-    try {
-      return new URL(url);
-    } catch {
-      return null;
-    }
-  })();
-  const isPooledConnection = parsed?.hostname.endsWith(".pooler.supabase.com") ?? false;
-  const prepare = process.env.PAPERCLIP_DB_PREPARE === "false" ? false : !isPooledConnection;
+  const parsed = parseDbUrl(url);
+  const isSupavisor = parsed?.hostname.endsWith(".pooler.supabase.com") ?? false;
+  const prepare = shouldPrepare(parsed);
   const maxConnections = envPositiveInt(
     "PAPERCLIP_DB_MAX_CONNECTIONS",
-    isPooledConnection ? 5 : 10,
+    isSupavisor ? 10 : 10,
   );
   const connectTimeout = envPositiveInt("PAPERCLIP_DB_CONNECT_TIMEOUT_SECONDS", 10);
   const idleTimeout = envPositiveInt(
     "PAPERCLIP_DB_IDLE_TIMEOUT_SECONDS",
-    isPooledConnection ? 60 : 0,
+    isSupavisor ? 60 : 0,
   );
   const maxLifetime = envPositiveInt(
     "PAPERCLIP_DB_MAX_LIFETIME_SECONDS",
-    isPooledConnection ? 900 : 0,
+    isSupavisor ? 900 : 0,
   );
+  const statementTimeoutMs = envPositiveInt("PAPERCLIP_DB_STATEMENT_TIMEOUT_MS", 30000);
+  const idleInTxTimeoutMs = envPositiveInt("PAPERCLIP_DB_IDLE_IN_TX_TIMEOUT_MS", 60000);
   const sql = postgres(url, {
     max: maxConnections,
     prepare,
@@ -83,7 +108,10 @@ export function createDb(url: string) {
     ...(maxLifetime > 0 ? { max_lifetime: maxLifetime } : {}),
     connection: {
       search_path: "public",
+      statement_timeout: statementTimeoutMs,
+      idle_in_transaction_session_timeout: idleInTxTimeoutMs,
     },
+    onnotice: () => {},
   });
   return drizzlePg(sql, { schema });
 }

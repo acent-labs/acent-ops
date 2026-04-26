@@ -248,10 +248,6 @@ function buildIsolatedWorktreeConfig(
         ? {
             embeddedPostgresDataDir: context.embeddedPostgresDataDir,
             embeddedPostgresPort: databasePort ?? config.database.embeddedPostgresPort,
-            backup: {
-              ...config.database.backup,
-              dir: context.backupDir,
-            },
           }
         : {}),
     },
@@ -295,9 +291,6 @@ function needsWorktreeConfigRepair(
 ): boolean {
   if (config.database.mode === "embedded-postgres") {
     if (!isPathInside(config.database.embeddedPostgresDataDir, context.instanceRoot)) {
-      return true;
-    }
-    if (!isPathInside(config.database.backup.dir, context.instanceRoot)) {
       return true;
     }
   }

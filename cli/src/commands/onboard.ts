@@ -31,7 +31,6 @@ import { buildPresetServerConfig } from "../config/server-bind.js";
 import {
   describeLocalInstancePaths,
   expandHomePrefix,
-  resolveDefaultBackupDir,
   resolveDefaultEmbeddedPostgresDir,
   resolveDefaultLogsDir,
   resolvePaperclipInstanceId,
@@ -62,10 +61,6 @@ const TAILNET_BIND_WARNING =
 const ONBOARD_ENV_KEYS = [
   "PAPERCLIP_PUBLIC_URL",
   "DATABASE_URL",
-  "PAPERCLIP_DB_BACKUP_ENABLED",
-  "PAPERCLIP_DB_BACKUP_INTERVAL_MINUTES",
-  "PAPERCLIP_DB_BACKUP_RETENTION_DAYS",
-  "PAPERCLIP_DB_BACKUP_DIR",
   "PAPERCLIP_DEPLOYMENT_MODE",
   "PAPERCLIP_DEPLOYMENT_EXPOSURE",
   "PAPERCLIP_BIND",
@@ -199,27 +194,12 @@ function quickstartDefaultsFromEnv(opts?: { preferTrustedLocal?: boolean }): {
   const secretsProvider =
     parseEnumFromEnv<SecretProvider>(process.env.PAPERCLIP_SECRETS_PROVIDER, SECRET_PROVIDERS) ??
     defaultSecrets.provider;
-  const databaseBackupEnabled = parseBooleanFromEnv(process.env.PAPERCLIP_DB_BACKUP_ENABLED) ?? true;
-  const databaseBackupIntervalMinutes = Math.max(
-    1,
-    parseNumberFromEnv(process.env.PAPERCLIP_DB_BACKUP_INTERVAL_MINUTES) ?? 60,
-  );
-  const databaseBackupRetentionDays = Math.max(
-    1,
-    parseNumberFromEnv(process.env.PAPERCLIP_DB_BACKUP_RETENTION_DAYS) ?? 30,
-  );
   const defaults: OnboardDefaults = {
     database: {
       mode: databaseUrl ? "postgres" : "embedded-postgres",
       ...(databaseUrl ? { connectionString: databaseUrl } : {}),
       embeddedPostgresDataDir: resolveDefaultEmbeddedPostgresDir(instanceId),
       embeddedPostgresPort: 54329,
-      backup: {
-        enabled: databaseBackupEnabled,
-        intervalMinutes: databaseBackupIntervalMinutes,
-        retentionDays: databaseBackupRetentionDays,
-        dir: resolvePathFromEnv(process.env.PAPERCLIP_DB_BACKUP_DIR) ?? resolveDefaultBackupDir(instanceId),
-      },
     },
     logging: {
       mode: "file",

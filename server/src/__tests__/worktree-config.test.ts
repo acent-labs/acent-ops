@@ -35,12 +35,6 @@ function buildLegacyConfig(sharedRoot: string) {
       mode: "embedded-postgres" as const,
       embeddedPostgresDataDir: path.join(sharedRoot, "db"),
       embeddedPostgresPort: 54329,
-      backup: {
-        enabled: true,
-        intervalMinutes: 60,
-        retentionDays: 30,
-        dir: path.join(sharedRoot, "data", "backups"),
-      },
     },
     logging: {
       mode: "file" as const,
@@ -126,7 +120,6 @@ describe("worktree config repair", () => {
     const instanceRoot = path.join(isolatedHome, "instances", "pap-884-ai-commits-component");
 
     expect(repairedConfig.database.embeddedPostgresDataDir).toBe(path.join(instanceRoot, "db"));
-    expect(repairedConfig.database.backup.dir).toBe(path.join(instanceRoot, "data", "backups"));
     expect(repairedConfig.logging.logDir).toBe(path.join(instanceRoot, "logs"));
     expect(repairedConfig.storage.localDisk.baseDir).toBe(path.join(instanceRoot, "data", "storage"));
     expect(repairedConfig.secrets.localEncrypted.keyFilePath).toBe(path.join(instanceRoot, "secrets", "master.key"));
@@ -171,12 +164,6 @@ describe("worktree config repair", () => {
             mode: "embedded-postgres",
             embeddedPostgresDataDir: path.join(siblingInstanceRoot, "db"),
             embeddedPostgresPort: 54330,
-            backup: {
-              enabled: true,
-              intervalMinutes: 60,
-              retentionDays: 30,
-              dir: path.join(siblingInstanceRoot, "data", "backups"),
-            },
           },
           server: {
             deploymentMode: "local_trusted",
@@ -227,12 +214,6 @@ describe("worktree config repair", () => {
             mode: "embedded-postgres",
             embeddedPostgresDataDir: path.join(transientHome, "instances", instanceId, "db"),
             embeddedPostgresPort: 54334,
-            backup: {
-              enabled: true,
-              intervalMinutes: 60,
-              retentionDays: 30,
-              dir: path.join(transientHome, "instances", instanceId, "data", "backups"),
-            },
           },
           logging: {
             mode: "file",
@@ -302,7 +283,6 @@ describe("worktree config repair", () => {
       repairedEnv: false,
     });
     expect(repairedConfig.database.embeddedPostgresDataDir).toBe(path.join(stableInstanceRoot, "db"));
-    expect(repairedConfig.database.backup.dir).toBe(path.join(stableInstanceRoot, "data", "backups"));
     expect(repairedConfig.logging.logDir).toBe(path.join(stableInstanceRoot, "logs"));
     expect(repairedConfig.storage.localDisk.baseDir).toBe(path.join(stableInstanceRoot, "data", "storage"));
     expect(repairedConfig.secrets.localEncrypted.keyFilePath).toBe(
@@ -337,12 +317,6 @@ describe("worktree config repair", () => {
             mode: "embedded-postgres",
             embeddedPostgresDataDir: path.join(currentInstanceRoot, "db"),
             embeddedPostgresPort: 54330,
-            backup: {
-              enabled: true,
-              intervalMinutes: 60,
-              retentionDays: 30,
-              dir: path.join(currentInstanceRoot, "data", "backups"),
-            },
           },
           logging: {
             mode: "file",
@@ -400,12 +374,6 @@ describe("worktree config repair", () => {
             mode: "embedded-postgres",
             embeddedPostgresDataDir: path.join(siblingInstanceRoot, "db"),
             embeddedPostgresPort: 54330,
-            backup: {
-              enabled: true,
-              intervalMinutes: 60,
-              retentionDays: 30,
-              dir: path.join(siblingInstanceRoot, "data", "backups"),
-            },
           },
           server: {
             deploymentMode: "local_trusted",
@@ -453,12 +421,6 @@ describe("worktree config repair", () => {
             mode: "embedded-postgres",
             embeddedPostgresDataDir: path.join(instanceRoot, "db"),
             embeddedPostgresPort: 54331,
-            backup: {
-              enabled: true,
-              intervalMinutes: 60,
-              retentionDays: 30,
-              dir: path.join(instanceRoot, "data", "backups"),
-            },
           },
           logging: {
             mode: "file",

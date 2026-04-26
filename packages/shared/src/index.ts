@@ -206,7 +206,6 @@ export type {
   InstanceExperimentalSettings,
   InstanceGeneralSettings,
   InstanceSettings,
-  BackupRetentionPolicy,
   Agent,
   AgentAccessState,
   AgentChainOfCommandEntry,
@@ -426,13 +425,6 @@ export {
   FEEDBACK_VOTE_VALUES,
   DEFAULT_FEEDBACK_DATA_SHARING_TERMS_VERSION,
 } from "./types/feedback.js";
-
-export {
-  DAILY_RETENTION_PRESETS,
-  WEEKLY_RETENTION_PRESETS,
-  MONTHLY_RETENTION_PRESETS,
-  DEFAULT_BACKUP_RETENTION,
-} from "./types/instance.js";
 
 export {
   getClosedIsolatedExecutionWorkspaceMessage,
@@ -738,7 +730,6 @@ export {
   paperclipConfigSchema,
   configMetaSchema,
   llmConfigSchema,
-  databaseBackupConfigSchema,
   databaseConfigSchema,
   loggingConfigSchema,
   serverConfigSchema,
@@ -752,7 +743,6 @@ export {
   type TelemetryConfig,
   type PaperclipConfig,
   type LlmConfig,
-  type DatabaseBackupConfig,
   type DatabaseConfig,
   type LoggingConfig,
   type ServerConfig,

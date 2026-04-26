@@ -20,10 +20,12 @@ All environment variables that Paperclip uses for server configuration.
 | `PAPERCLIP_DEPLOYMENT_EXPOSURE` | `private` | Exposure policy when deployment mode is `authenticated` |
 | `PAPERCLIP_API_URL` | (auto-derived) | Paperclip API base URL. When set externally (e.g., via Kubernetes ConfigMap, load balancer, or reverse proxy), the server preserves the value instead of deriving it from the listen host and port. Useful for deployments where the public-facing URL differs from the local bind address. |
 | `PAPERCLIP_DB_CONNECT_TIMEOUT_SECONDS` | `10` | PostgreSQL connect timeout used by the application database client |
-| `PAPERCLIP_DB_MAX_CONNECTIONS` | `5` for Supabase pooler URLs, otherwise `10` | Maximum application database client pool size |
+| `PAPERCLIP_DB_MAX_CONNECTIONS` | `10` | Maximum application database client pool size |
 | `PAPERCLIP_DB_IDLE_TIMEOUT_SECONDS` | `60` for Supabase pooler URLs, otherwise unset | Idle connection lifetime for the application database client |
 | `PAPERCLIP_DB_MAX_LIFETIME_SECONDS` | `900` for Supabase pooler URLs, otherwise unset | Maximum connection lifetime for the application database client |
-| `PAPERCLIP_DB_PREPARE` | auto | Set to `false` to disable prepared statements; automatically disabled for Supabase pooler URLs |
+| `PAPERCLIP_DB_STATEMENT_TIMEOUT_MS` | `30000` | Server-enforced cancel timeout for any single query |
+| `PAPERCLIP_DB_IDLE_IN_TX_TIMEOUT_MS` | `60000` | Server-enforced timeout for transactions that go idle mid-statement |
+| `PAPERCLIP_DB_PREPARE` | auto | Set to `false` to disable prepared statements; automatically disabled for Supabase Transaction Pooler (port 6543). Use the Session Pooler (port 5432) for long-running servers. |
 | `PAPERCLIP_HEALTH_DB_TIMEOUT_MS` | `5000` | Timeout for database-backed health probes |
 
 ## Secrets

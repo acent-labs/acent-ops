@@ -72,35 +72,33 @@ For production, use a hosted PostgreSQL provider. [Supabase](https://supabase.co
 
 ### Connection string
 
-Supabase offers two connection modes:
+Supabase exposes Supavisor in two modes via the same `pooler.supabase.com` host:
 
-**Direct connection** (port 5432) — use for migrations and one-off scripts:
+**Session Pooler** (port **5432**) — **use this for the Paperclip server.** Persistent sessions, prepared statements, `SET search_path`, advisory locks, and Drizzle transactions all work normally:
 
 ```
 postgres://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:5432/postgres
 ```
 
-**Connection pooling via Supavisor** (port 6543) — use for the application:
-
-```
-postgres://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres
-```
+**Transaction Pooler** (port **6543**) — only suitable for stateless serverless callers. Prepared statements and session-level state are stripped between transactions; running a long-lived Node server through this mode will be unstable.
 
 ### Configure
 
 Set `DATABASE_URL` in your `.env`:
 
 ```sh
-DATABASE_URL=postgres://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres
+DATABASE_URL=postgres://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:5432/postgres
 ```
 
-If using connection pooling (port 6543), Paperclip automatically disables prepared statements for `*.pooler.supabase.com` URLs and applies conservative connection lifetimes for Supavisor. You can tune these values without changing code:
+Paperclip detects Supavisor pooler URLs and applies conservative connection lifetimes plus server-enforced statement timeouts. For the Transaction Pooler (port 6543) prepared statements are automatically disabled, but the Session Pooler is still the recommended endpoint. Tune via env if needed:
 
 ```sh
 PAPERCLIP_DB_CONNECT_TIMEOUT_SECONDS=10
-PAPERCLIP_DB_MAX_CONNECTIONS=5
+PAPERCLIP_DB_MAX_CONNECTIONS=10
 PAPERCLIP_DB_IDLE_TIMEOUT_SECONDS=60
 PAPERCLIP_DB_MAX_LIFETIME_SECONDS=900
+PAPERCLIP_DB_STATEMENT_TIMEOUT_MS=30000
+PAPERCLIP_DB_IDLE_IN_TX_TIMEOUT_MS=60000
 PAPERCLIP_HEALTH_DB_TIMEOUT_MS=5000
 ```
 

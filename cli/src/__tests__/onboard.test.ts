@@ -21,12 +21,6 @@ function createExistingConfigFixture() {
       mode: "embedded-postgres",
       embeddedPostgresDataDir: path.join(runtimeRoot, "db"),
       embeddedPostgresPort: 54329,
-      backup: {
-        enabled: true,
-        intervalMinutes: 60,
-        retentionDays: 30,
-        dir: path.join(runtimeRoot, "backups"),
-      },
     },
     logging: {
       mode: "file",

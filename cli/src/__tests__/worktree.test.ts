@@ -79,12 +79,6 @@ function buildSourceConfig(): PaperclipConfig {
       mode: "embedded-postgres",
       embeddedPostgresDataDir: "/tmp/main/db",
       embeddedPostgresPort: 54329,
-      backup: {
-        enabled: true,
-        intervalMinutes: 60,
-        retentionDays: 30,
-        dir: "/tmp/main/backups",
-      },
     },
     logging: {
       mode: "file",
@@ -408,12 +402,6 @@ describe("worktree helpers", () => {
           mode: "postgres",
           embeddedPostgresDataDir: path.join(sourceConfigDir, "db"),
           embeddedPostgresPort: 54329,
-          backup: {
-            enabled: true,
-            intervalMinutes: 60,
-            retentionDays: 30,
-            dir: path.join(sourceConfigDir, "backups"),
-          },
           connectionString: sourceDb.connectionString,
         };
         sourceConfig.logging.logDir = path.join(sourceConfigDir, "logs");
@@ -485,12 +473,6 @@ describe("worktree helpers", () => {
               mode: "embedded-postgres",
               embeddedPostgresDataDir: path.join(siblingInstanceRoot, "db"),
               embeddedPostgresPort: 54330,
-              backup: {
-                enabled: true,
-                intervalMinutes: 60,
-                retentionDays: 30,
-                dir: path.join(siblingInstanceRoot, "backups"),
-              },
             },
             logging: {
               mode: "file",

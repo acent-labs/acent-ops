@@ -200,12 +200,6 @@ export function buildWorktreeConfig(input: {
       mode: "embedded-postgres",
       embeddedPostgresDataDir: paths.embeddedPostgresDataDir,
       embeddedPostgresPort: databasePort,
-      backup: {
-        enabled: source?.database.backup.enabled ?? true,
-        intervalMinutes: source?.database.backup.intervalMinutes ?? 60,
-        retentionDays: source?.database.backup.retentionDays ?? 30,
-        dir: paths.backupDir,
-      },
     },
     logging: {
       mode: source?.logging.mode ?? "file",

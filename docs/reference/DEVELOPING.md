@@ -209,7 +209,7 @@ Seed modes:
 - `full` makes a full logical clone of the source instance
 - `--no-seed` creates an empty isolated instance
 
-After `worktree init`, both the server and the CLI auto-load the repo-local `.paperclip/.env` when run inside that worktree, so normal commands like `pnpm dev`, `paperclipai doctor`, and `paperclipai db:backup` stay scoped to the worktree instance.
+After `worktree init`, both the server and the CLI auto-load the repo-local `.paperclip/.env` when run inside that worktree, so normal commands like `pnpm dev` and `paperclipai doctor` stay scoped to the worktree instance.
 
 `pnpm dev` now fails fast in a linked git worktree when `.paperclip/.env` is missing, instead of silently booting against the default instance/port. If that happens, run `paperclipai worktree init` in the worktree first.
 
@@ -398,35 +398,9 @@ pnpm dev
 
 If you set `DATABASE_URL`, the server will use that instead of embedded PostgreSQL.
 
-## Automatic DB Backups
+## DB Backups
 
-Paperclip can run automatic DB backups on a timer. Defaults:
-
-- enabled
-- every 60 minutes
-- retain 30 days
-- backup dir: `~/.paperclip/instances/default/data/backups`
-
-Configure these in:
-
-```sh
-pnpm paperclipai configure --section database
-```
-
-Run a one-off backup manually:
-
-```sh
-pnpm paperclipai db:backup
-# or:
-pnpm db:backup
-```
-
-Environment overrides:
-
-- `PAPERCLIP_DB_BACKUP_ENABLED=true|false`
-- `PAPERCLIP_DB_BACKUP_INTERVAL_MINUTES=<minutes>`
-- `PAPERCLIP_DB_BACKUP_RETENTION_DAYS=<days>`
-- `PAPERCLIP_DB_BACKUP_DIR=/absolute/or/~/path`
+Paperclip no longer runs its own DB backups. When using Supabase or another managed Postgres, rely on the provider's built-in backups (Supabase performs daily backups by default). For local embedded-postgres development, snapshot the data directory manually if needed.
 
 ## Secrets in Dev
 
