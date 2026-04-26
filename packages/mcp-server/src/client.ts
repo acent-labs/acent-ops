@@ -48,6 +48,10 @@ async function parseResponseBody(response: Response): Promise<unknown> {
   }
 }
 
+function abortErrorMessage(timeoutMs: number): string {
+  return `Paperclip API request timed out after ${timeoutMs}ms`;
+}
+
 export class PaperclipApiClient {
   constructor(private readonly config: PaperclipMcpConfig) {}
 
@@ -92,11 +96,24 @@ export class PaperclipApiClient {
       headers["X-Paperclip-Run-Id"] = this.config.runId;
     }
 
-    const response = await fetch(url, {
-      method,
-      headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(new Error(abortErrorMessage(this.config.apiRequestTimeoutMs))), this.config.apiRequestTimeoutMs);
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method,
+        headers,
+        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new Error(abortErrorMessage(this.config.apiRequestTimeoutMs));
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
     const parsedBody = await parseResponseBody(response);
 
     if (!response.ok) {

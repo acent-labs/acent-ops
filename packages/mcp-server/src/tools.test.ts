@@ -9,11 +9,27 @@ function makeClient() {
     companyId: "11111111-1111-1111-1111-111111111111",
     agentId: "22222222-2222-2222-2222-222222222222",
     runId: "33333333-3333-3333-3333-333333333333",
+    accessMode: "read_write",
+    apiRequestTimeoutMs: 5_000,
+    enableApiRequestTool: true,
+  });
+}
+
+function makeClientWithoutApiRequestTool() {
+  return new PaperclipApiClient({
+    apiUrl: "http://localhost:3100/api",
+    apiKey: "token-123",
+    companyId: "11111111-1111-1111-1111-111111111111",
+    agentId: "22222222-2222-2222-2222-222222222222",
+    runId: "33333333-3333-3333-3333-333333333333",
+    accessMode: "read_write",
+    apiRequestTimeoutMs: 5_000,
+    enableApiRequestTool: false,
   });
 }
 
 function getTool(name: string) {
-  const tool = createToolDefinitions(makeClient()).find((candidate) => candidate.name === name);
+  const tool = createToolDefinitions(makeClient(), { enableApiRequestTool: true }).find((candidate) => candidate.name === name);
   if (!tool) throw new Error(`Missing tool ${name}`);
   return tool;
 }
@@ -155,5 +171,52 @@ describe("paperclip MCP tools", () => {
     });
 
     expect(response.content[0]?.text).toContain("must not contain '..'");
+  });
+
+  it("omits mutating tools in read-only mode", () => {
+    const tools = createToolDefinitions(makeClient(), { accessMode: "read_only" });
+    const names = tools.map((tool) => tool.name);
+
+    expect(names).toContain("paperclipGetTask");
+    expect(names).toContain("paperclipSearchTasks");
+    expect(names).not.toContain("paperclipUpdateTaskStatus");
+    expect(names).not.toContain("paperclipApiRequest");
+    expect(tools.every((tool) => tool.annotations.readOnlyHint === true)).toBe(true);
+  });
+
+  it("keeps dedicated write tools while omitting the generic API request tool by default", () => {
+    const tools = createToolDefinitions(makeClientWithoutApiRequestTool(), {
+      accessMode: "read_write",
+      enableApiRequestTool: false,
+    });
+    const names = tools.map((tool) => tool.name);
+
+    expect(names).toContain("paperclipUpdateTaskStatus");
+    expect(names).toContain("paperclipAddTaskComment");
+    expect(names).not.toContain("paperclipApiRequest");
+  });
+
+  it("adds task aliases over issue endpoints", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(mockJsonResponse({ id: "PAP-1135", status: "todo" }))
+      .mockResolvedValueOnce(mockJsonResponse({ id: "PAP-1135", status: "done" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const tool = getTool("paperclipUpdateTaskStatus");
+    const response = await tool.execute({
+      taskId: "PAP-1135",
+      status: "done",
+      comment: "Completed through MCP",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [patchUrl, patchInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(String(patchUrl)).toBe("http://localhost:3100/api/issues/PAP-1135");
+    expect(patchInit.method).toBe("PATCH");
+    expect(JSON.parse(String(patchInit.body))).toEqual({
+      status: "done",
+      comment: "Completed through MCP",
+    });
+    expect(response.content[0]?.text).toContain('"oldStatus": "todo"');
   });
 });

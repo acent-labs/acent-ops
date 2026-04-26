@@ -489,8 +489,10 @@ export function createPluginJobScheduler(
       trigger,
     });
 
-    // Dispatch in background — don't block the caller
-    void dispatchManualRun(job, run.id, trigger);
+    // Dispatch in background — don't block the caller.
+    dispatchManualRun(job, run.id, trigger).catch((err) => {
+      log.error({ err, jobId, runId: run.id, trigger }, "manual job dispatch unhandled error");
+    });
 
     return { runId: run.id, jobId };
   }
@@ -696,7 +698,9 @@ export function createPluginJobScheduler(
 
     running = true;
     tickTimer = setInterval(() => {
-      void tick();
+      tick().catch((err) => {
+        log.error({ err }, "scheduler tick unhandled error");
+      });
     }, tickIntervalMs);
 
     log.info(

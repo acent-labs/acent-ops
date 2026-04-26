@@ -5,8 +5,10 @@ import { repoRoot } from "./dev-service-profile.ts";
 function toDisplayLines(records: Awaited<ReturnType<typeof listLocalServiceRegistryRecords>>) {
   return records.map((record) => {
     const childPid = typeof record.metadata?.childPid === "number" ? ` child=${record.metadata.childPid}` : "";
+    const mcpChildPid = typeof record.metadata?.mcpChildPid === "number" ? ` mcpChild=${record.metadata.mcpChildPid}` : "";
+    const mcpUrl = typeof record.metadata?.mcpUrl === "string" ? ` mcp=${record.metadata.mcpUrl}` : "";
     const url = typeof record.metadata?.url === "string" ? ` url=${record.metadata.url}` : "";
-    return `${record.serviceName} pid=${record.pid}${childPid} cwd=${record.cwd}${url}`;
+    return `${record.serviceName} pid=${record.pid}${childPid}${mcpChildPid} cwd=${record.cwd}${url}${mcpUrl}`;
   });
 }
 

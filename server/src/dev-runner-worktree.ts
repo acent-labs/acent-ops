@@ -36,6 +36,32 @@ function parseEnvFile(contents: string): Record<string, string> {
   return entries;
 }
 
+function expandHomePrefix(value: string): string {
+  if (value === "~") return process.env.HOME ?? value;
+  if (value.startsWith("~/")) return path.join(process.env.HOME ?? "~", value.slice(2));
+  return value;
+}
+
+function resolveDefaultInstanceEnvFilePath(env: NodeJS.ProcessEnv = process.env): string {
+  if (env.PAPERCLIP_CONFIG?.trim()) {
+    return path.resolve(path.dirname(expandHomePrefix(env.PAPERCLIP_CONFIG.trim())), ".env");
+  }
+
+  const home = env.PAPERCLIP_HOME?.trim()
+    ? path.resolve(expandHomePrefix(env.PAPERCLIP_HOME.trim()))
+    : path.resolve(process.env.HOME ?? ".", ".paperclip");
+  const instanceId = env.PAPERCLIP_INSTANCE_ID?.trim() || "default";
+  return path.resolve(home, "instances", instanceId, ".env");
+}
+
+function mergeEnvEntries(envPath: string, env: NodeJS.ProcessEnv) {
+  const entries = parseEnvFile(readFileSync(envPath, "utf8"));
+  for (const [key, value] of Object.entries(entries)) {
+    if (typeof env[key] === "string" && env[key]!.trim().length > 0) continue;
+    env[key] = value;
+  }
+}
+
 type WorktreeEnvBootstrapResult =
   | { envPath: null; missingEnv: false }
   | { envPath: string; missingEnv: true }
@@ -74,14 +100,22 @@ export function bootstrapDevRunnerWorktreeEnv(
     };
   }
 
-  const entries = parseEnvFile(readFileSync(envPath, "utf8"));
-  for (const [key, value] of Object.entries(entries)) {
-    if (typeof env[key] === "string" && env[key]!.trim().length > 0) continue;
-    env[key] = value;
-  }
+  mergeEnvEntries(envPath, env);
 
   return {
     envPath,
     missingEnv: false,
   };
+}
+
+export function bootstrapDevRunnerInstanceEnv(
+  env: NodeJS.ProcessEnv = process.env,
+): { envPath: string; loaded: boolean } {
+  const envPath = resolveDefaultInstanceEnvFilePath(env);
+  if (!existsSync(envPath)) {
+    return { envPath, loaded: false };
+  }
+
+  mergeEnvEntries(envPath, env);
+  return { envPath, loaded: true };
 }

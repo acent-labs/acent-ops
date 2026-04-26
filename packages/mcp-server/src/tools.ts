@@ -4,20 +4,36 @@ import {
   checkoutIssueSchema,
   createApprovalSchema,
   createIssueSchema,
+  ISSUE_PRIORITIES,
+  ISSUE_STATUSES,
   updateIssueSchema,
   upsertIssueDocumentSchema,
   linkIssueApprovalSchema,
 } from "@paperclipai/shared";
+import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { PaperclipApiClient } from "./client.js";
+import type { PaperclipMcpAccessMode } from "./config.js";
 import { formatErrorResponse, formatTextResponse } from "./format.js";
 
 export interface ToolDefinition {
   name: string;
   description: string;
   schema: z.AnyZodObject;
+  access: "read" | "write";
+  annotations: ToolAnnotations;
   execute: (input: Record<string, unknown>) => Promise<{
     content: Array<{ type: "text"; text: string }>;
   }>;
+}
+
+interface ToolOptions {
+  access?: "read" | "write";
+  annotations?: ToolAnnotations;
+}
+
+export interface CreateToolDefinitionsOptions {
+  accessMode?: PaperclipMcpAccessMode;
+  enableApiRequestTool?: boolean;
 }
 
 function makeTool<TSchema extends z.ZodRawShape>(
@@ -25,11 +41,20 @@ function makeTool<TSchema extends z.ZodRawShape>(
   description: string,
   schema: z.ZodObject<TSchema>,
   execute: (input: z.infer<typeof schema>) => Promise<unknown>,
+  options: ToolOptions = {},
 ): ToolDefinition {
+  const access = options.access ?? "read";
   return {
     name,
     description,
     schema,
+    access,
+    annotations: options.annotations ?? {
+      readOnlyHint: access === "read",
+      destructiveHint: false,
+      idempotentHint: access === "read",
+      openWorldHint: true,
+    },
     execute: async (input) => {
       try {
         const parsed = schema.parse(input);
@@ -46,17 +71,20 @@ function parseOptionalJson(raw: string | undefined | null): unknown {
   return JSON.parse(raw);
 }
 
-const companyIdOptional = z.string().uuid().optional().nullable();
-const agentIdOptional = z.string().uuid().optional().nullable();
+const companyIdOptional = z.string().uuid().optional();
+const agentIdOptional = z.string().uuid().optional();
 const issueIdSchema = z.string().min(1);
 const projectIdSchema = z.string().min(1);
 const goalIdSchema = z.string().uuid();
 const approvalIdSchema = z.string().uuid();
 const documentKeySchema = z.string().trim().min(1).max(64);
+const issueStatusSchema = z.enum(ISSUE_STATUSES);
+const issuePrioritySchema = z.enum(ISSUE_PRIORITIES);
 
 const listIssuesSchema = z.object({
   companyId: companyIdOptional,
   status: z.string().optional(),
+  priority: issuePrioritySchema.optional(),
   projectId: z.string().uuid().optional(),
   assigneeAgentId: z.string().uuid().optional(),
   participantAgentId: z.string().uuid().optional(),
@@ -69,7 +97,9 @@ const listIssuesSchema = z.object({
   originKind: z.string().optional(),
   originId: z.string().optional(),
   includeRoutineExecutions: z.boolean().optional(),
+  excludeRoutineExecutions: z.boolean().optional(),
   q: z.string().optional(),
+  limit: z.number().int().positive().max(500).optional(),
 });
 
 const listCommentsSchema = z.object({
@@ -124,8 +154,73 @@ const apiRequestSchema = z.object({
   jsonBody: z.string().optional(),
 });
 
-export function createToolDefinitions(client: PaperclipApiClient): ToolDefinition[] {
-  return [
+const taskIdToolSchema = z.object({
+  taskId: issueIdSchema.describe("Paperclip issue UUID or identifier such as PAP-1234"),
+});
+
+function extractItems(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object" && Array.isArray((value as { items?: unknown }).items)) {
+    return (value as { items: unknown[] }).items;
+  }
+  return [];
+}
+
+function readStringField(value: unknown, key: string): string | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = (value as Record<string, unknown>)[key];
+  return typeof raw === "string" ? raw : null;
+}
+
+function compactTaskItem(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object") return {};
+  const item = value as Record<string, unknown>;
+  return {
+    id: item.id,
+    identifier: item.identifier,
+    title: item.title,
+    status: item.status,
+    priority: item.priority,
+    assigneeAgentId: item.assigneeAgentId,
+    assigneeUserId: item.assigneeUserId,
+    projectId: item.projectId,
+    goalId: item.goalId,
+    updatedAt: item.updatedAt,
+    url: item.url,
+  };
+}
+
+function filterByPriority(items: unknown[], priority: string | undefined): unknown[] {
+  if (!priority) return items;
+  return items.filter((item) => readStringField(item, "priority") === priority);
+}
+
+function filterByUpdatedSince(items: unknown[], sinceHours: number | undefined): unknown[] {
+  if (!sinceHours) return items;
+  const cutoff = Date.now() - sinceHours * 60 * 60 * 1000;
+  return items.filter((item) => {
+    const updatedAt = readStringField(item, "updatedAt");
+    if (!updatedAt) return false;
+    const timestamp = Date.parse(updatedAt);
+    return Number.isFinite(timestamp) && timestamp >= cutoff;
+  });
+}
+
+function buildIssueListPath(companyId: string, input: Record<string, unknown>, ignoredKeys: string[] = []): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(input)) {
+    if (key === "companyId" || ignoredKeys.includes(key) || value === undefined || value === null) continue;
+    params.set(key, String(value));
+  }
+  const qs = params.toString();
+  return `/companies/${companyId}/issues${qs ? `?${qs}` : ""}`;
+}
+
+export function createToolDefinitions(
+  client: PaperclipApiClient,
+  options: CreateToolDefinitionsOptions = {},
+): ToolDefinition[] {
+  const tools = [
     makeTool(
       "paperclipMe",
       "Get the current authenticated Paperclip actor details",
@@ -159,13 +254,81 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
       listIssuesSchema,
       async (input) => {
         const companyId = client.resolveCompanyId(input.companyId);
-        const params = new URLSearchParams();
-        for (const [key, value] of Object.entries(input)) {
-          if (key === "companyId" || value === undefined || value === null) continue;
-          params.set(key, String(value));
-        }
-        const qs = params.toString();
-        return client.requestJson("GET", `/companies/${companyId}/issues${qs ? `?${qs}` : ""}`);
+        const result = await client.requestJson("GET", buildIssueListPath(companyId, input, ["priority"]));
+        if (!input.priority) return result;
+        const items = filterByPriority(extractItems(result), input.priority);
+        return Array.isArray(result) ? items : { ...(result as Record<string, unknown>), items };
+      },
+    ),
+    makeTool(
+      "paperclipGetTask",
+      "Get one Paperclip task. In Paperclip, tasks are issues.",
+      taskIdToolSchema.extend({
+        latestCommentsLimit: z.number().int().positive().max(20).optional().default(5),
+      }),
+      async ({ taskId, latestCommentsLimit }) => {
+        const [task, latestComments] = await Promise.all([
+          client.requestJson("GET", `/issues/${encodeURIComponent(taskId)}`),
+          client.requestJson(
+            "GET",
+            `/issues/${encodeURIComponent(taskId)}/comments?order=desc&limit=${latestCommentsLimit}`,
+          ),
+        ]);
+        return { task, latestComments };
+      },
+    ),
+    makeTool(
+      "paperclipSearchTasks",
+      "Search Paperclip tasks with common human-facing filters",
+      z.object({
+        companyId: companyIdOptional,
+        query: z.string().optional(),
+        status: issueStatusSchema.optional(),
+        assigneeAgentId: z.string().uuid().optional(),
+        projectId: z.string().uuid().optional(),
+        priority: issuePrioritySchema.optional(),
+        limit: z.number().int().positive().max(100).optional().default(20),
+      }),
+      async ({ companyId, query, status, assigneeAgentId, projectId, priority, limit }) => {
+        const resolvedCompanyId = client.resolveCompanyId(companyId);
+        const result = await client.requestJson(
+          "GET",
+          buildIssueListPath(resolvedCompanyId, {
+            q: query,
+            status,
+            assigneeAgentId,
+            projectId,
+            limit,
+          }),
+        );
+        const items = filterByPriority(extractItems(result), priority)
+          .slice(0, limit)
+          .map(compactTaskItem);
+        return { items };
+      },
+    ),
+    makeTool(
+      "paperclipListRecentTasks",
+      "List recently updated Paperclip tasks",
+      z.object({
+        companyId: companyIdOptional,
+        projectId: z.string().uuid().optional(),
+        sinceHours: z.number().int().positive().max(24 * 30).optional().default(24),
+        limit: z.number().int().positive().max(100).optional().default(20),
+      }),
+      async ({ companyId, projectId, sinceHours, limit }) => {
+        const resolvedCompanyId = client.resolveCompanyId(companyId);
+        const result = await client.requestJson(
+          "GET",
+          buildIssueListPath(resolvedCompanyId, {
+            projectId,
+            limit: Math.max(limit * 2, limit),
+          }),
+        );
+        const items = filterByUpdatedSince(extractItems(result), sinceHours)
+          .slice(0, limit)
+          .map(compactTaskItem);
+        return { items };
       },
     ),
     makeTool(
@@ -276,6 +439,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
         client.requestJson("POST", `/companies/${client.resolveCompanyId(companyId)}/approvals`, {
           body,
         }),
+      { access: "write" },
     ),
     makeTool(
       "paperclipGetApproval",
@@ -301,6 +465,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
       createIssueToolSchema,
       async ({ companyId, ...body }) =>
         client.requestJson("POST", `/companies/${client.resolveCompanyId(companyId)}/issues`, { body }),
+      { access: "write" },
     ),
     makeTool(
       "paperclipUpdateIssue",
@@ -308,6 +473,29 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
       updateIssueToolSchema,
       async ({ issueId, ...body }) =>
         client.requestJson("PATCH", `/issues/${encodeURIComponent(issueId)}`, { body }),
+      { access: "write" },
+    ),
+    makeTool(
+      "paperclipUpdateTaskStatus",
+      "Update a Paperclip task status. In Paperclip, tasks are issues.",
+      taskIdToolSchema.extend({
+        status: issueStatusSchema,
+        comment: z.string().min(1).optional(),
+      }),
+      async ({ taskId, status, comment }) => {
+        const previous = await client.requestJson("GET", `/issues/${encodeURIComponent(taskId)}`);
+        const updated = await client.requestJson("PATCH", `/issues/${encodeURIComponent(taskId)}`, {
+          body: { status, comment },
+        });
+        return {
+          success: true,
+          taskId,
+          oldStatus: readStringField(previous, "status"),
+          newStatus: status,
+          updated,
+        };
+      },
+      { access: "write" },
     ),
     makeTool(
       "paperclipCheckoutIssue",
@@ -320,12 +508,14 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
             expectedStatuses: expectedStatuses ?? ["todo", "backlog", "blocked"],
           },
         }),
+      { access: "write" },
     ),
     makeTool(
       "paperclipReleaseIssue",
       "Release an issue checkout",
       z.object({ issueId: issueIdSchema }),
       async ({ issueId }) => client.requestJson("POST", `/issues/${encodeURIComponent(issueId)}/release`, { body: {} }),
+      { access: "write" },
     ),
     makeTool(
       "paperclipAddComment",
@@ -333,6 +523,21 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
       addCommentToolSchema,
       async ({ issueId, ...body }) =>
         client.requestJson("POST", `/issues/${encodeURIComponent(issueId)}/comments`, { body }),
+      { access: "write" },
+    ),
+    makeTool(
+      "paperclipAddTaskComment",
+      "Add a comment to a Paperclip task. In Paperclip, tasks are issues.",
+      taskIdToolSchema.extend({
+        comment: z.string().min(1),
+      }),
+      async ({ taskId, comment }) => {
+        const created = await client.requestJson("POST", `/issues/${encodeURIComponent(taskId)}/comments`, {
+          body: { body: comment },
+        });
+        return { success: true, taskId, comment: created };
+      },
+      { access: "write" },
     ),
     makeTool(
       "paperclipUpsertIssueDocument",
@@ -344,6 +549,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
           `/issues/${encodeURIComponent(issueId)}/documents/${encodeURIComponent(key)}`,
           { body },
         ),
+      { access: "write" },
     ),
     makeTool(
       "paperclipRestoreIssueDocumentRevision",
@@ -359,6 +565,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
           `/issues/${encodeURIComponent(issueId)}/documents/${encodeURIComponent(key)}/revisions/${encodeURIComponent(revisionId)}/restore`,
           { body: {} },
         ),
+      { access: "write" },
     ),
     makeTool(
       "paperclipLinkIssueApproval",
@@ -368,6 +575,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
         client.requestJson("POST", `/issues/${encodeURIComponent(issueId)}/approvals`, {
           body: { approvalId },
         }),
+      { access: "write" },
     ),
     makeTool(
       "paperclipUnlinkIssueApproval",
@@ -378,6 +586,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
           "DELETE",
           `/issues/${encodeURIComponent(issueId)}/approvals/${encodeURIComponent(approvalId)}`,
         ),
+      { access: "write" },
     ),
     makeTool(
       "paperclipApprovalDecision",
@@ -400,6 +609,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
 
         return client.requestJson("POST", path, { body });
       },
+      { access: "write" },
     ),
     makeTool(
       "paperclipAddApprovalComment",
@@ -409,6 +619,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
         client.requestJson("POST", `/approvals/${encodeURIComponent(approvalId)}/comments`, {
           body: { body },
         }),
+      { access: "write" },
     ),
     makeTool(
       "paperclipApiRequest",
@@ -422,6 +633,21 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
           body: parseOptionalJson(jsonBody),
         });
       },
+      {
+        access: "write",
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: false,
+          openWorldHint: true,
+        },
+      },
     ),
   ];
+
+  return tools.filter((tool) => {
+    if (options.accessMode === "read_only" && tool.access !== "read") return false;
+    if (tool.name === "paperclipApiRequest" && options.enableApiRequestTool !== true) return false;
+    return true;
+  });
 }

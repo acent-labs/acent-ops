@@ -10,6 +10,8 @@ export function createDevServiceIdentity(input: {
   forwardedArgs: string[];
   networkProfile: string;
   port: number;
+  mcpEnabled?: boolean;
+  mcpPort?: number;
 }) {
   const envFingerprint = createHash("sha256")
     .update(
@@ -18,6 +20,8 @@ export function createDevServiceIdentity(input: {
         forwardedArgs: input.forwardedArgs,
         networkProfile: input.networkProfile,
         port: input.port,
+        mcpEnabled: input.mcpEnabled ?? false,
+        mcpPort: input.mcpPort ?? null,
       }),
     )
     .digest("hex");
