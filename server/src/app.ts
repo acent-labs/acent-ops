@@ -103,6 +103,7 @@ export function shouldEnablePrivateHostnameGuard(opts: {
 export async function createApp(
   db: Db,
   opts: {
+    backgroundDb?: Db;
     uiMode: UiMode;
     serverPort: number;
     storageService: StorageService;
@@ -202,13 +203,14 @@ export async function createApp(
   api.use(instanceSettingsRoutes(db));
   const hostServicesDisposers = new Map<string, () => void>();
   const workerManager = createPluginWorkerManager();
+  const backgroundDb = opts.backgroundDb ?? db;
   const pluginRegistry = pluginRegistryService(db);
   const eventBus = createPluginEventBus();
   setPluginEventBus(eventBus);
-  const jobStore = pluginJobStore(db);
+  const jobStore = pluginJobStore(backgroundDb);
   const lifecycle = pluginLifecycleManager(db, { workerManager });
   const scheduler = createPluginJobScheduler({
-    db,
+    db: backgroundDb,
     jobStore,
     workerManager,
   });
@@ -219,7 +221,7 @@ export async function createApp(
   });
   pluginToolDispatcherRef = toolDispatcher;
   const jobCoordinator = createPluginJobCoordinator({
-    db,
+    db: backgroundDb,
     lifecycle,
     scheduler,
     jobStore,

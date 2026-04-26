@@ -6,6 +6,7 @@ export {
   applyPendingMigrations,
   reconcilePendingMigrationHistory,
   type MigrationState,
+  type CreateDbOptions,
   type MigrationHistoryReconcileResult,
   migratePostgresIfEmpty,
   type MigrationBootstrapResult,

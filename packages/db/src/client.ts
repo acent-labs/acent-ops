@@ -81,25 +81,49 @@ export type MigrationState =
       reason: "no-migration-journal-empty-db" | "no-migration-journal-non-empty-db" | "pending-migrations";
     };
 
-export function createDb(url: string) {
+export type CreateDbOptions = {
+  maxConnections?: number;
+  connectTimeoutSeconds?: number;
+  idleTimeoutSeconds?: number;
+  maxLifetimeSeconds?: number;
+  statementTimeoutMs?: number;
+  idleInTransactionSessionTimeoutMs?: number;
+  applicationName?: string;
+};
+
+function positiveIntOption(value: number | undefined, fallback: number): number {
+  if (value === undefined) return fallback;
+  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : fallback;
+}
+
+export function createDb(url: string, options: CreateDbOptions = {}) {
   const parsed = parseDbUrl(url);
   const isSupavisor = parsed?.hostname.endsWith(".pooler.supabase.com") ?? false;
   const prepare = shouldPrepare(parsed);
-  const maxConnections = envPositiveInt(
-    "PAPERCLIP_DB_MAX_CONNECTIONS",
-    isSupavisor ? 10 : 10,
+  const maxConnections = positiveIntOption(
+    options.maxConnections,
+    envPositiveInt("PAPERCLIP_DB_MAX_CONNECTIONS", isSupavisor ? 10 : 10),
   );
-  const connectTimeout = envPositiveInt("PAPERCLIP_DB_CONNECT_TIMEOUT_SECONDS", 10);
-  const idleTimeout = envPositiveInt(
-    "PAPERCLIP_DB_IDLE_TIMEOUT_SECONDS",
-    isSupavisor ? 60 : 0,
+  const connectTimeout = positiveIntOption(
+    options.connectTimeoutSeconds,
+    envPositiveInt("PAPERCLIP_DB_CONNECT_TIMEOUT_SECONDS", 10),
   );
-  const maxLifetime = envPositiveInt(
-    "PAPERCLIP_DB_MAX_LIFETIME_SECONDS",
-    isSupavisor ? 900 : 0,
+  const idleTimeout = positiveIntOption(
+    options.idleTimeoutSeconds,
+    envPositiveInt("PAPERCLIP_DB_IDLE_TIMEOUT_SECONDS", isSupavisor ? 60 : 0),
   );
-  const statementTimeoutMs = envPositiveInt("PAPERCLIP_DB_STATEMENT_TIMEOUT_MS", 30000);
-  const idleInTxTimeoutMs = envPositiveInt("PAPERCLIP_DB_IDLE_IN_TX_TIMEOUT_MS", 60000);
+  const maxLifetime = positiveIntOption(
+    options.maxLifetimeSeconds,
+    envPositiveInt("PAPERCLIP_DB_MAX_LIFETIME_SECONDS", isSupavisor ? 900 : 0),
+  );
+  const statementTimeoutMs = positiveIntOption(
+    options.statementTimeoutMs,
+    envPositiveInt("PAPERCLIP_DB_STATEMENT_TIMEOUT_MS", 30000),
+  );
+  const idleInTxTimeoutMs = positiveIntOption(
+    options.idleInTransactionSessionTimeoutMs,
+    envPositiveInt("PAPERCLIP_DB_IDLE_IN_TX_TIMEOUT_MS", 60000),
+  );
   const sql = postgres(url, {
     max: maxConnections,
     prepare,
@@ -108,6 +132,7 @@ export function createDb(url: string) {
     ...(maxLifetime > 0 ? { max_lifetime: maxLifetime } : {}),
     connection: {
       search_path: "public",
+      ...(options.applicationName ? { application_name: options.applicationName } : {}),
       statement_timeout: statementTimeoutMs,
       idle_in_transaction_session_timeout: idleInTxTimeoutMs,
     },
