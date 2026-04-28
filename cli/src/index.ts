@@ -7,6 +7,8 @@ import { addAllowedHostname } from "./commands/allowed-hostname.js";
 import { heartbeatRun } from "./commands/heartbeat-run.js";
 import { runCommand } from "./commands/run.js";
 import { bootstrapCeoInvite } from "./commands/auth-bootstrap-ceo.js";
+import { dbBackupCommand } from "./commands/db-backup.js";
+import { registerEnvLabCommands } from "./commands/env-lab.js";
 import { registerContextCommands } from "./commands/client/context.js";
 import { registerCompanyCommands } from "./commands/client/company.js";
 import { registerIssueCommands } from "./commands/client/issue.js";
@@ -82,6 +84,19 @@ program
   .action(configure);
 
 program
+  .command("db:backup")
+  .description("Create a one-off database backup using current config")
+  .option("-c, --config <path>", "Path to config file")
+  .option("-d, --data-dir <path>", DATA_DIR_OPTION_HELP)
+  .option("--dir <path>", "Backup output directory (overrides config)")
+  .option("--retention-days <days>", "Retention window used for pruning", (value) => Number(value))
+  .option("--filename-prefix <prefix>", "Backup filename prefix", "paperclip")
+  .option("--json", "Print backup metadata as JSON")
+  .action(async (opts) => {
+    await dbBackupCommand(opts);
+  });
+
+program
   .command("allowed-hostname")
   .description("Allow a hostname for authenticated/private mode access")
   .argument("<host>", "Hostname to allow (for example dotta-macbook-pro)")
@@ -133,6 +148,7 @@ registerDashboardCommands(program);
 registerRoutineCommands(program);
 registerFeedbackCommands(program);
 registerWorktreeCommands(program);
+registerEnvLabCommands(program);
 registerPluginCommands(program);
 
 const auth = program.command("auth").description("Authentication and bootstrap utilities");

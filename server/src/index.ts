@@ -16,6 +16,8 @@ import {
   applyPendingMigrations,
   createEmbeddedPostgresLogBuffer,
   reconcilePendingMigrationHistory,
+  formatDatabaseBackupResult,
+  runDatabaseBackup,
   authUsers,
   companies,
   companyMemberships,
@@ -34,12 +36,18 @@ import {
   routineService,
 } from "./services/index.js";
 import { createFeedbackTraceShareClientFromConfig } from "./services/feedback-share-client.js";
+import { buildRuntimeApiCandidateUrls, choosePrimaryRuntimeApiUrl } from "./runtime-api.js";
+import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
 import { maybePersistWorktreeRuntimePorts } from "./worktree-config.js";
 import { initTelemetry, getTelemetryClient } from "./telemetry.js";
-import type { AuthProviderFlags } from "./auth/better-auth.js";
+import { conflict } from "./errors.js";
+import type {
+  InstanceDatabaseBackupRunResult,
+  InstanceDatabaseBackupTrigger,
+} from "./routes/instance-database-backups.js";
 
 type BetterAuthSessionUser = {
   id: string;
@@ -69,94 +77,6 @@ type EmbeddedPostgresCtor = new (opts: {
   onError?: (message: unknown) => void;
 }) => EmbeddedPostgresInstance;
 
-function envPositiveInt(name: string, fallback: number): number {
-  const raw = process.env[name]?.trim();
-  if (!raw) return fallback;
-  const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function createBackgroundDatabase(connectionString: string) {
-  const maxConnections = envPositiveInt("PAPERCLIP_BACKGROUND_DB_MAX_CONNECTIONS", 2);
-  const statementTimeoutMs = envPositiveInt("PAPERCLIP_BACKGROUND_DB_STATEMENT_TIMEOUT_MS", 20_000);
-  const idleInTxTimeoutMs = envPositiveInt("PAPERCLIP_BACKGROUND_DB_IDLE_IN_TX_TIMEOUT_MS", 30_000);
-
-  const backgroundDb = createDb(connectionString, {
-    maxConnections,
-    connectTimeoutSeconds: envPositiveInt("PAPERCLIP_BACKGROUND_DB_CONNECT_TIMEOUT_SECONDS", 10),
-    idleTimeoutSeconds: envPositiveInt("PAPERCLIP_BACKGROUND_DB_IDLE_TIMEOUT_SECONDS", 30),
-    maxLifetimeSeconds: envPositiveInt("PAPERCLIP_BACKGROUND_DB_MAX_LIFETIME_SECONDS", 300),
-    statementTimeoutMs,
-    idleInTransactionSessionTimeoutMs: idleInTxTimeoutMs,
-    applicationName: "paperclip-background",
-  });
-
-  logger.info(
-    {
-      maxConnections,
-      statementTimeoutMs,
-      idleInTransactionSessionTimeoutMs: idleInTxTimeoutMs,
-    },
-    "Background database pool ready",
-  );
-
-  return backgroundDb;
-}
-
-function createSingleFlightBackgroundTask<T>(opts: {
-  taskName: string;
-  timeoutMs: number;
-  run: () => Promise<T>;
-  onSuccess?: (result: T) => void;
-}) {
-  let inFlight = false;
-  let startedAt = 0;
-  let skippedRuns = 0;
-
-  return () => {
-    if (inFlight) {
-      skippedRuns += 1;
-      const ageMs = Date.now() - startedAt;
-      if (skippedRuns === 1 || skippedRuns % 10 === 0) {
-        logger.warn(
-          { taskName: opts.taskName, ageMs, skippedRuns },
-          "background scheduler task skipped because previous run is still in progress",
-        );
-      }
-      return;
-    }
-
-    inFlight = true;
-    startedAt = Date.now();
-    skippedRuns = 0;
-    let settled = false;
-    const timeoutTimer = setTimeout(() => {
-      if (!settled) {
-        logger.error(
-          { taskName: opts.taskName, timeoutMs: opts.timeoutMs },
-          "background scheduler task exceeded timeout; suppressing overlapping ticks until it settles",
-        );
-      }
-    }, opts.timeoutMs);
-
-    void opts.run()
-      .then((result) => {
-        opts.onSuccess?.(result);
-      })
-      .catch((err) => {
-        logger.error({ err, taskName: opts.taskName }, "background scheduler task failed");
-      })
-      .finally(() => {
-        settled = true;
-        clearTimeout(timeoutTimer);
-        const durationMs = Date.now() - startedAt;
-        if (durationMs > opts.timeoutMs) {
-          logger.warn({ taskName: opts.taskName, durationMs }, "background scheduler task recovered after timeout");
-        }
-        inFlight = false;
-      });
-  };
-}
 
 export interface StartedServer {
   server: ReturnType<typeof createServer>;
@@ -178,7 +98,7 @@ export async function startServer(): Promise<StartedServer> {
   if (process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE === undefined) {
     process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE = config.secretsMasterKeyFilePath;
   }
-
+  
   type MigrationSummary =
     | "skipped"
     | "already applied"
@@ -271,7 +191,8 @@ export async function startServer(): Promise<StartedServer> {
     if (!rawUrl) return undefined;
     try {
       const parsed = new URL(rawUrl);
-      if (!isLoopbackHost(parsed.hostname)) return rawUrl;
+      // The URL API normalizes default ports like :80/:443 to "", so treat them as stable URLs.
+      if (!parsed.port) return rawUrl;
       parsed.port = String(port);
       return parsed.toString();
     } catch {
@@ -340,6 +261,7 @@ export async function startServer(): Promise<StartedServer> {
   }
   
   let db;
+  let pluginMigrationDb;
   let embeddedPostgres: EmbeddedPostgresInstance | null = null;
   let embeddedPostgresStartedByThisProcess = false;
   let migrationSummary: MigrationSummary = "skipped";
@@ -349,9 +271,11 @@ export async function startServer(): Promise<StartedServer> {
     | { mode: "external-postgres"; connectionString: string }
     | { mode: "embedded-postgres"; dataDir: string; port: number };
   if (config.databaseUrl) {
-    migrationSummary = await ensureMigrations(config.databaseUrl, "PostgreSQL");
+    const migrationUrl = config.databaseMigrationUrl ?? config.databaseUrl;
+    migrationSummary = await ensureMigrations(migrationUrl, "PostgreSQL");
   
     db = createDb(config.databaseUrl);
+    pluginMigrationDb = config.databaseMigrationUrl ? createDb(config.databaseMigrationUrl) : db;
     logger.info("Using external PostgreSQL via DATABASE_URL/config");
     activeDatabaseConnectionString = config.databaseUrl;
     startupDbInfo = { mode: "external-postgres", connectionString: config.databaseUrl };
@@ -511,16 +435,15 @@ export async function startServer(): Promise<StartedServer> {
     migrationSummary = await ensureMigrations(embeddedConnectionString, "Embedded PostgreSQL", {
       autoApply: shouldAutoApplyFirstRunMigrations,
     });
-
+  
     db = createDb(embeddedConnectionString);
+    pluginMigrationDb = db;
     logger.info("Embedded PostgreSQL ready");
     activeDatabaseConnectionString = embeddedConnectionString;
     resolvedEmbeddedPostgresPort = port;
     startupDbInfo = { mode: "embedded-postgres", dataDir, port };
   }
-
-  const backgroundDb = createBackgroundDatabase(activeDatabaseConnectionString);
-
+  
   if (config.deploymentMode === "local_trusted" && !isLoopbackHost(config.host)) {
     throw new Error(
       `local_trusted mode requires loopback host binding (received: ${config.host}). ` +
@@ -545,6 +468,12 @@ export async function startServer(): Promise<StartedServer> {
       }
     }
   }
+
+  const requestedListenPort = config.port;
+  const listenPort = await detectPort(requestedListenPort);
+  if (config.authBaseUrlMode === "explicit" && config.authPublicBaseUrl) {
+    config.authPublicBaseUrl = rewriteLocalUrlPort(config.authPublicBaseUrl, listenPort);
+  }
   
   let authReady = config.deploymentMode === "local_trusted";
   let betterAuthHandler: RequestHandler | undefined;
@@ -554,7 +483,6 @@ export async function startServer(): Promise<StartedServer> {
   let resolveSessionFromHeaders:
     | ((headers: Headers) => Promise<BetterAuthSessionResult | null>)
     | undefined;
-  let authProviders: AuthProviderFlags | undefined;
   if (config.deploymentMode === "local_trusted") {
     await ensureLocalTrustedBoardPrincipal(db as any);
   }
@@ -563,12 +491,10 @@ export async function startServer(): Promise<StartedServer> {
       createBetterAuthHandler,
       createBetterAuthInstance,
       deriveAuthTrustedOrigins,
-      resolveAuthProviderFlags,
       resolveBetterAuthSession,
       resolveBetterAuthSessionFromHeaders,
     } = await import("./auth/better-auth.js");
-    authProviders = resolveAuthProviderFlags();
-    const derivedTrustedOrigins = deriveAuthTrustedOrigins(config);
+    const derivedTrustedOrigins = deriveAuthTrustedOrigins(config, { listenPort });
     const envTrustedOrigins = (process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? "")
       .split(",")
       .map((value) => value.trim())
@@ -593,16 +519,9 @@ export async function startServer(): Promise<StartedServer> {
     await initializeBoardClaimChallenge(db as any, { deploymentMode: config.deploymentMode });
     authReady = true;
   }
-  
-  const listenPort = await detectPort(config.port);
-  if (listenPort !== config.port) {
-    config.port = listenPort;
-  }
+
   if (resolvedEmbeddedPostgresPort !== null && resolvedEmbeddedPostgresPort !== config.embeddedPostgresPort) {
     config.embeddedPostgresPort = resolvedEmbeddedPostgresPort;
-  }
-  if (config.authBaseUrlMode === "explicit" && config.authPublicBaseUrl) {
-    config.authPublicBaseUrl = rewriteLocalUrlPort(config.authPublicBaseUrl, listenPort);
   }
   maybePersistWorktreeRuntimePorts({
     serverPort: listenPort,
@@ -613,21 +532,91 @@ export async function startServer(): Promise<StartedServer> {
   const feedback = feedbackService(db as any, {
     shareClient: createFeedbackTraceShareClientFromConfig(config),
   });
+  const backupSettingsSvc = instanceSettingsService(db);
+  let databaseBackupInFlight = false;
+  const runServerDatabaseBackup = async (
+    trigger: InstanceDatabaseBackupTrigger,
+  ): Promise<InstanceDatabaseBackupRunResult | null> => {
+    if (databaseBackupInFlight) {
+      const message = "Database backup already in progress";
+      if (trigger === "scheduled") {
+        logger.warn("Skipping scheduled database backup because a previous backup is still running");
+        return null;
+      }
+      throw conflict(message);
+    }
+
+    databaseBackupInFlight = true;
+    const startedAt = new Date();
+    const startedAtMs = Date.now();
+    const label = trigger === "scheduled" ? "Automatic" : "Manual";
+    try {
+      logger.info({ backupDir: config.databaseBackupDir, trigger }, `${label} database backup starting`);
+      // Read retention from Instance Settings (DB) so changes take effect without restart.
+      const generalSettings = await backupSettingsSvc.getGeneral();
+      const retention = generalSettings.backupRetention;
+
+      const result = await runDatabaseBackup({
+        connectionString: activeDatabaseConnectionString,
+        backupDir: config.databaseBackupDir,
+        retention,
+        filenamePrefix: "paperclip",
+      });
+      const finishedAt = new Date();
+      const response: InstanceDatabaseBackupRunResult = {
+        ...result,
+        trigger,
+        backupDir: config.databaseBackupDir,
+        retention,
+        startedAt: startedAt.toISOString(),
+        finishedAt: finishedAt.toISOString(),
+        durationMs: Date.now() - startedAtMs,
+      };
+      logger.info(
+        {
+          backupFile: result.backupFile,
+          sizeBytes: result.sizeBytes,
+          prunedCount: result.prunedCount,
+          backupDir: config.databaseBackupDir,
+          retention,
+          trigger,
+          durationMs: response.durationMs,
+        },
+        `${label} database backup complete: ${formatDatabaseBackupResult(result)}`,
+      );
+      return response;
+    } catch (err) {
+      logger.error({ err, backupDir: config.databaseBackupDir, trigger }, `${label} database backup failed`);
+      throw err;
+    } finally {
+      databaseBackupInFlight = false;
+    }
+  };
+  const pluginWorkerManager = createPluginWorkerManager();
   const app = await createApp(db as any, {
-    backgroundDb: backgroundDb as any,
     uiMode,
     serverPort: listenPort,
     storageService,
     feedbackExportService: feedback,
+    databaseBackupService: {
+      runManualBackup: async () => {
+        const result = await runServerDatabaseBackup("manual");
+        if (!result) {
+          throw conflict("Database backup already in progress");
+        }
+        return result;
+      },
+    },
     deploymentMode: config.deploymentMode,
     deploymentExposure: config.deploymentExposure,
     allowedHostnames: config.allowedHostnames,
     bindHost: config.host,
     authReady,
     companyDeletionEnabled: config.companyDeletionEnabled,
-    authProviders,
+    pluginMigrationDb: pluginMigrationDb as any,
     betterAuthHandler,
     resolveSession,
+    pluginWorkerManager,
   });
   const server = createServer(app as unknown as Parameters<typeof createServer>[0]);
 
@@ -637,20 +626,29 @@ export async function startServer(): Promise<StartedServer> {
   server.keepAliveTimeout = 185000;
   server.headersTimeout = 186000;
   
-  if (listenPort !== config.port) {
-    logger.warn(`Requested port is busy; using next free port (requestedPort=${config.port}, selectedPort=${listenPort})`);
+  if (listenPort !== requestedListenPort) {
+    logger.warn(`Requested port is busy; using next free port (requestedPort=${requestedListenPort}, selectedPort=${listenPort})`);
   }
   
   const runtimeListenHost = config.host;
-  const runtimeApiHost =
-    runtimeListenHost === "0.0.0.0" || runtimeListenHost === "::"
-      ? "localhost"
-      : runtimeListenHost;
+  const runtimeApiUrl = choosePrimaryRuntimeApiUrl({
+    authPublicBaseUrl: config.authPublicBaseUrl ?? null,
+    allowedHostnames: config.allowedHostnames,
+    bindHost: runtimeListenHost,
+    port: listenPort,
+  });
+  const runtimeApiCandidates = buildRuntimeApiCandidateUrls({
+    authPublicBaseUrl: config.authPublicBaseUrl ?? null,
+    allowedHostnames: config.allowedHostnames,
+    bindHost: runtimeListenHost,
+    port: listenPort,
+  });
+  const configuredApiUrl = process.env.PAPERCLIP_API_URL?.trim() || runtimeApiUrl;
   process.env.PAPERCLIP_LISTEN_HOST = runtimeListenHost;
   process.env.PAPERCLIP_LISTEN_PORT = String(listenPort);
-  if (!process.env.PAPERCLIP_API_URL) {
-    process.env.PAPERCLIP_API_URL = `http://${runtimeApiHost}:${listenPort}`;
-  }
+  process.env.PAPERCLIP_RUNTIME_API_URL = runtimeApiUrl;
+  process.env.PAPERCLIP_RUNTIME_API_CANDIDATES_JSON = JSON.stringify(runtimeApiCandidates);
+  process.env.PAPERCLIP_API_URL = configuredApiUrl;
   
   setupLiveEventsWebSocketServer(server, db as any, {
     deploymentMode: config.deploymentMode,
@@ -671,77 +669,123 @@ export async function startServer(): Promise<StartedServer> {
     });
   
   if (config.heartbeatSchedulerEnabled) {
-    const heartbeat = heartbeatService(backgroundDb as any);
-    const routines = routineService(backgroundDb as any);
-    const schedulerTaskTimeoutMs = envPositiveInt("PAPERCLIP_SCHEDULER_TASK_TIMEOUT_MS", 45_000);
-    const tickHeartbeatTimers = createSingleFlightBackgroundTask({
-      taskName: "heartbeat timer tick",
-      timeoutMs: schedulerTaskTimeoutMs,
-      run: () => heartbeat.tickTimers(new Date()),
-      onSuccess: (result) => {
-        if (result.enqueued > 0) {
-          logger.info({ ...result }, "heartbeat timer tick enqueued runs");
-        }
-      },
-    });
-    const tickRoutineScheduler = createSingleFlightBackgroundTask({
-      taskName: "routine scheduler tick",
-      timeoutMs: schedulerTaskTimeoutMs,
-      run: () => routines.tickScheduledTriggers(new Date()),
-      onSuccess: (result) => {
-        if (result.triggered > 0) {
-          logger.info({ ...result }, "routine scheduler tick enqueued runs");
-        }
-      },
-    });
-    const tickHeartbeatRecovery = createSingleFlightBackgroundTask({
-      taskName: "heartbeat recovery tick",
-      timeoutMs: schedulerTaskTimeoutMs,
-      run: async () => {
-        await heartbeat.reapOrphanedRuns({ staleThresholdMs: 5 * 60 * 1000 });
-        await heartbeat.resumeQueuedRuns();
-        return heartbeat.reconcileStrandedAssignedIssues();
-      },
-      onSuccess: (reconciled) => {
-        if (
-          reconciled.dispatchRequeued > 0 ||
-          reconciled.continuationRequeued > 0 ||
-          reconciled.escalated > 0
-        ) {
-          logger.warn({ ...reconciled }, "periodic stranded-issue reconciliation changed assigned issue state");
-        }
-      },
-    });
-    const startupHeartbeatRecovery = createSingleFlightBackgroundTask({
-      taskName: "startup heartbeat recovery",
-      timeoutMs: schedulerTaskTimeoutMs,
-      run: async () => {
-        await heartbeat.reapOrphanedRuns();
-        await heartbeat.resumeQueuedRuns();
-        return heartbeat.reconcileStrandedAssignedIssues();
-      },
-      onSuccess: (reconciled) => {
-        if (
-          reconciled.dispatchRequeued > 0 ||
-          reconciled.continuationRequeued > 0 ||
-          reconciled.escalated > 0
-        ) {
-          logger.warn({ ...reconciled }, "startup stranded-issue reconciliation changed assigned issue state");
-        }
-      },
-    });
-
+    const heartbeat = heartbeatService(db as any, { pluginWorkerManager });
+    const routines = routineService(db as any, { pluginWorkerManager });
+  
     // Reap orphaned running runs at startup while in-memory execution state is empty,
     // then resume any persisted queued runs that were waiting on the previous process.
-    startupHeartbeatRecovery();
+    void heartbeat
+      .reapOrphanedRuns()
+      .then(() => heartbeat.promoteDueScheduledRetries())
+      .then(async (promotion) => {
+        await heartbeat.resumeQueuedRuns();
+        const reconciled = await heartbeat.reconcileStrandedAssignedIssues();
+        if (
+          promotion.promoted > 0 ||
+          reconciled.assignmentDispatched > 0 ||
+          reconciled.dispatchRequeued > 0 ||
+          reconciled.continuationRequeued > 0 ||
+          reconciled.escalated > 0
+        ) {
+          logger.warn(
+            { promotedScheduledRetries: promotion.promoted, promotedScheduledRetryRunIds: promotion.runIds, ...reconciled },
+            "startup heartbeat recovery changed assigned issue state",
+          );
+        }
+      })
+      .then(async () => {
+        const reconciled = await heartbeat.reconcileIssueGraphLiveness();
+        if (reconciled.escalationsCreated > 0) {
+          logger.warn({ ...reconciled }, "startup issue-graph liveness reconciliation created escalations");
+        }
+      })
+      .then(async () => {
+        const scanned = await heartbeat.scanSilentActiveRuns();
+        if (scanned.created > 0 || scanned.escalated > 0) {
+          logger.warn({ ...scanned }, "startup active-run output watchdog created review work");
+        }
+      })
+      .catch((err) => {
+        logger.error({ err }, "startup heartbeat recovery failed");
+      });
     setInterval(() => {
-      tickHeartbeatTimers();
-      tickRoutineScheduler();
+      void heartbeat
+        .tickTimers(new Date())
+        .then((result) => {
+          if (result.enqueued > 0) {
+            logger.info({ ...result }, "heartbeat timer tick enqueued runs");
+          }
+        })
+        .catch((err) => {
+          logger.error({ err }, "heartbeat timer tick failed");
+        });
 
+      void routines
+        .tickScheduledTriggers(new Date())
+        .then((result) => {
+          if (result.triggered > 0) {
+            logger.info({ ...result }, "routine scheduler tick enqueued runs");
+          }
+        })
+        .catch((err) => {
+          logger.error({ err }, "routine scheduler tick failed");
+        });
+  
       // Periodically reap orphaned runs (5-min staleness threshold) and make sure
       // persisted queued work is still being driven forward.
-      tickHeartbeatRecovery();
+      void heartbeat
+        .reapOrphanedRuns({ staleThresholdMs: 5 * 60 * 1000 })
+        .then(() => heartbeat.promoteDueScheduledRetries())
+        .then(async (promotion) => {
+          await heartbeat.resumeQueuedRuns();
+          const reconciled = await heartbeat.reconcileStrandedAssignedIssues();
+          if (
+            promotion.promoted > 0 ||
+            reconciled.assignmentDispatched > 0 ||
+            reconciled.dispatchRequeued > 0 ||
+            reconciled.continuationRequeued > 0 ||
+            reconciled.escalated > 0
+          ) {
+            logger.warn(
+              { promotedScheduledRetries: promotion.promoted, promotedScheduledRetryRunIds: promotion.runIds, ...reconciled },
+              "periodic heartbeat recovery changed assigned issue state",
+            );
+          }
+        })
+        .then(async () => {
+          const reconciled = await heartbeat.reconcileIssueGraphLiveness();
+          if (reconciled.escalationsCreated > 0) {
+            logger.warn({ ...reconciled }, "periodic issue-graph liveness reconciliation created escalations");
+          }
+        })
+        .then(async () => {
+          const scanned = await heartbeat.scanSilentActiveRuns();
+          if (scanned.created > 0 || scanned.escalated > 0) {
+            logger.warn({ ...scanned }, "periodic active-run output watchdog created review work");
+          }
+        })
+        .catch((err) => {
+          logger.error({ err }, "periodic heartbeat recovery failed");
+        });
     }, config.heartbeatSchedulerIntervalMs);
+  }
+  
+  if (config.databaseBackupEnabled) {
+    const backupIntervalMs = config.databaseBackupIntervalMinutes * 60 * 1000;
+
+    logger.info(
+      {
+        intervalMinutes: config.databaseBackupIntervalMinutes,
+        retentionSource: "instance-settings-db",
+        backupDir: config.databaseBackupDir,
+      },
+      "Automatic database backups enabled",
+    );
+    setInterval(() => {
+      void runServerDatabaseBackup("scheduled").catch(() => {
+        // runServerDatabaseBackup already logs the failure with context.
+      });
+    }, backupIntervalMs);
   }
   
   // Wait for external adapters to finish loading before accepting requests.
@@ -778,13 +822,17 @@ export async function startServer(): Promise<StartedServer> {
           deploymentMode: config.deploymentMode,
         deploymentExposure: config.deploymentExposure,
         authReady,
-        requestedPort: config.port,
+        requestedPort: requestedListenPort,
         listenPort,
         uiMode,
         db: startupDbInfo,
         migrationSummary,
         heartbeatSchedulerEnabled: config.heartbeatSchedulerEnabled,
         heartbeatSchedulerIntervalMs: config.heartbeatSchedulerIntervalMs,
+        databaseBackupEnabled: config.databaseBackupEnabled,
+        databaseBackupIntervalMinutes: config.databaseBackupIntervalMinutes,
+        databaseBackupRetentionDays: config.databaseBackupRetentionDays,
+        databaseBackupDir: config.databaseBackupDir,
       });
 
       const boardClaimUrl = getBoardClaimWarningUrl(config.host, listenPort);
@@ -839,7 +887,7 @@ export async function startServer(): Promise<StartedServer> {
     server,
     host: config.host,
     listenPort,
-    apiUrl: process.env.PAPERCLIP_API_URL!,
+    apiUrl: configuredApiUrl,
     databaseUrl: activeDatabaseConnectionString,
   };
 }
@@ -854,18 +902,7 @@ function isMainModule(metaUrl: string): boolean {
   }
 }
 
-function installProcessSafetyNet(): void {
-  process.on("unhandledRejection", (reason) => {
-    const err = reason instanceof Error ? reason : new Error(String(reason));
-    logger.error({ err }, "Unhandled promise rejection (suppressed to keep server alive)");
-  });
-  process.on("uncaughtException", (err) => {
-    logger.error({ err }, "Uncaught exception (suppressed to keep server alive)");
-  });
-}
-
 if (isMainModule(import.meta.url)) {
-  installProcessSafetyNet();
   void startServer().catch((err) => {
     logger.error({ err }, "Paperclip server failed to start");
     process.exit(1);

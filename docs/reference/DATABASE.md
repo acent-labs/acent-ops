@@ -27,9 +27,21 @@ pnpm db:migrate
 
 When `DATABASE_URL` is unset, this command targets the current embedded PostgreSQL instance for your active Paperclip config/instance.
 
+Issue reference mentions follow the normal migration path: the schema migration creates the tracking table, but it does not backfill historical issue titles, descriptions, comments, or documents automatically.
+
+To backfill existing content manually after migrating, run:
+
+```sh
+pnpm issue-references:backfill
+# optional: limit to one company
+pnpm issue-references:backfill -- --company <company-id>
+```
+
+Future issue, comment, and document writes sync references automatically without running the backfill command.
+
 This mode is ideal for local development and one-command installs.
 
-Docker note: the Docker quickstart image also uses embedded PostgreSQL by default. Persist `/paperclip` to keep DB state across container restarts (see `docs/reference/DOCKER.md`).
+Docker note: the Docker quickstart image also uses embedded PostgreSQL by default. Persist `/paperclip` to keep DB state across container restarts (see `doc/DOCKER.md`).
 
 ## 2. Local PostgreSQL (Docker)
 
@@ -72,48 +84,45 @@ For production, use a hosted PostgreSQL provider. [Supabase](https://supabase.co
 
 ### Connection string
 
-Supabase exposes Supavisor in two modes via the same `pooler.supabase.com` host:
+Supabase offers two connection modes:
 
-**Session Pooler** (port **5432**) — **use this for the Paperclip server.** Persistent sessions, prepared statements, `SET search_path`, advisory locks, and Drizzle transactions all work normally:
+**Direct connection** (port 5432) — use for migrations and one-off scripts:
 
 ```
 postgres://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:5432/postgres
 ```
 
-**Transaction Pooler** (port **6543**) — only suitable for stateless serverless callers. Prepared statements and session-level state are stripped between transactions; running a long-lived Node server through this mode will be unstable.
+**Connection pooling via Supavisor** (port 6543) — use for the application:
+
+```
+postgres://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres
+```
 
 ### Configure
 
 Set `DATABASE_URL` in your `.env`:
 
 ```sh
-DATABASE_URL=postgres://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:5432/postgres
+DATABASE_URL=postgres://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres
 ```
 
-Paperclip detects Supavisor pooler URLs and applies conservative connection lifetimes plus server-enforced statement timeouts. For the Transaction Pooler (port 6543) prepared statements are automatically disabled, but the Session Pooler is still the recommended endpoint. Tune via env if needed:
+For hosted deployments that use a pooled runtime URL, set
+`DATABASE_MIGRATION_URL` to the direct connection URL. Paperclip uses it for
+startup schema checks/migrations and plugin namespace migrations, while the app
+continues to use `DATABASE_URL` for runtime queries:
 
 ```sh
-PAPERCLIP_DB_CONNECT_TIMEOUT_SECONDS=10
-PAPERCLIP_DB_MAX_CONNECTIONS=10
-PAPERCLIP_DB_IDLE_TIMEOUT_SECONDS=60
-PAPERCLIP_DB_MAX_LIFETIME_SECONDS=900
-PAPERCLIP_DB_STATEMENT_TIMEOUT_MS=30000
-PAPERCLIP_DB_IDLE_IN_TX_TIMEOUT_MS=60000
-PAPERCLIP_HEALTH_DB_TIMEOUT_MS=5000
+DATABASE_URL=postgres://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres
+DATABASE_MIGRATION_URL=postgres://postgres.[PROJECT-REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:5432/postgres
 ```
 
-Paperclip also creates a separate, small database pool for background work such
-as heartbeat recovery, scheduled routines, and plugin cron jobs. This keeps a
-stalled background tick from exhausting the HTTP request pool:
+If using connection pooling (port 6543), the `postgres` client must disable prepared statements. Update `packages/db/src/client.ts`:
 
-```sh
-PAPERCLIP_BACKGROUND_DB_MAX_CONNECTIONS=2
-PAPERCLIP_BACKGROUND_DB_CONNECT_TIMEOUT_SECONDS=10
-PAPERCLIP_BACKGROUND_DB_IDLE_TIMEOUT_SECONDS=30
-PAPERCLIP_BACKGROUND_DB_MAX_LIFETIME_SECONDS=300
-PAPERCLIP_BACKGROUND_DB_STATEMENT_TIMEOUT_MS=20000
-PAPERCLIP_BACKGROUND_DB_IDLE_IN_TX_TIMEOUT_MS=30000
-PAPERCLIP_SCHEDULER_TASK_TIMEOUT_MS=45000
+```ts
+export function createDb(url: string) {
+  const sql = postgres(url, { prepare: false });
+  return drizzlePg(sql, { schema });
+}
 ```
 
 ### Push the schema

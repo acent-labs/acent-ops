@@ -1,5 +1,17 @@
 export type { Company } from "./company.js";
 export type {
+  Environment,
+  EnvironmentLease,
+  EnvironmentProbeResult,
+  FakeSandboxEnvironmentConfig,
+  LocalEnvironmentConfig,
+  PluginSandboxEnvironmentConfig,
+  PluginEnvironmentConfig,
+  SandboxEnvironmentConfig,
+  SandboxEnvironmentProvider,
+  SshEnvironmentConfig,
+} from "./environment.js";
+export type {
   FeedbackVote,
   FeedbackDataSharingPreference,
   FeedbackTargetType,
@@ -11,7 +23,23 @@ export type {
   FeedbackTraceBundleFile,
   FeedbackTraceBundle,
 } from "./feedback.js";
-export type { InstanceExperimentalSettings, InstanceGeneralSettings, InstanceSettings } from "./instance.js";
+export type {
+  InstanceExperimentalSettings,
+  InstanceGeneralSettings,
+  InstanceSettings,
+  BackupRetentionPolicy,
+  IssueGraphLivenessAutoRecoveryPreview,
+  IssueGraphLivenessAutoRecoveryPreviewItem,
+} from "./instance.js";
+export {
+  DAILY_RETENTION_PRESETS,
+  WEEKLY_RETENTION_PRESETS,
+  MONTHLY_RETENTION_PRESETS,
+  DEFAULT_BACKUP_RETENTION,
+  DEFAULT_ISSUE_GRAPH_LIVENESS_AUTO_RECOVERY_LOOKBACK_HOURS,
+  MIN_ISSUE_GRAPH_LIVENESS_AUTO_RECOVERY_LOOKBACK_HOURS,
+  MAX_ISSUE_GRAPH_LIVENESS_AUTO_RECOVERY_LOOKBACK_HOURS,
+} from "./instance.js";
 export type {
   CompanySkillSourceType,
   CompanySkillTrustLevel,
@@ -77,6 +105,10 @@ export type {
   WorkspaceRuntimeService,
   WorkspaceRuntimeServiceStateMap,
   WorkspaceRuntimeDesiredState,
+  WorkspaceRealizationRecord,
+  WorkspaceRealizationRequest,
+  WorkspaceRealizationSyncStrategy,
+  WorkspaceRealizationTransport,
   ExecutionWorkspaceStrategyType,
   ExecutionWorkspaceMode,
   ExecutionWorkspaceProviderType,
@@ -97,18 +129,16 @@ export type {
   IssueWorkProductProvider,
   IssueWorkProductStatus,
   IssueWorkProductReviewState,
-  IssueDeliverableKind,
-  IssueDeliverableChannel,
-  IssueDeliverableSourceSystem,
-  IssueDeliverableReviewRequest,
-  IssueDeliverableMetadata,
-  DeliverableListItem,
-  WorkProductSteeringAction,
-  WorkProductSteeringRequest,
 } from "./work-product.js";
 export type {
   Issue,
   IssueAssigneeAdapterOverrides,
+  IssueBlockerAttention,
+  IssueBlockerAttentionReason,
+  IssueBlockerAttentionState,
+  IssueReferenceSource,
+  IssueRelatedWorkItem,
+  IssueRelatedWorkSummary,
   IssueRelation,
   IssueRelationIssueSummary,
   IssueExecutionPolicy,
@@ -116,8 +146,31 @@ export type {
   IssueExecutionStage,
   IssueExecutionStageParticipant,
   IssueExecutionStagePrincipal,
+  IssueReviewRequest,
   IssueExecutionDecision,
   IssueComment,
+  IssueThreadInteractionActorFields,
+  SuggestedTaskDraft,
+  SuggestTasksPayload,
+  SuggestTasksResultCreatedTask,
+  SuggestTasksResult,
+  AskUserQuestionsQuestionOption,
+  AskUserQuestionsQuestion,
+  AskUserQuestionsPayload,
+  AskUserQuestionsAnswer,
+  AskUserQuestionsResult,
+  RequestConfirmationIssueDocumentTarget,
+  RequestConfirmationCustomTarget,
+  RequestConfirmationTarget,
+  RequestConfirmationPayload,
+  RequestConfirmationResult,
+  IssueThreadInteractionBase,
+  SuggestTasksInteraction,
+  AskUserQuestionsInteraction,
+  RequestConfirmationInteraction,
+  IssueThreadInteraction,
+  IssueThreadInteractionPayload,
+  IssueThreadInteractionResult,
   IssueDocument,
   IssueDocumentSummary,
   DocumentRevision,
@@ -129,6 +182,17 @@ export type {
   IssueAttachment,
   IssueLabel,
 } from "./issue.js";
+export type {
+  IssueTreeControlPreview,
+  IssueTreeHold,
+  IssueTreeHoldMember,
+  IssueTreeHoldReleasePolicy,
+  IssueTreePreviewAgent,
+  IssueTreePreviewIssue,
+  IssueTreePreviewRun,
+  IssueTreePreviewTotals,
+  IssueTreePreviewWarning,
+} from "./issue-tree-control.js";
 export type { Goal } from "./goal.js";
 export type { Approval, ApprovalComment } from "./approval.js";
 export type {
@@ -174,8 +238,18 @@ export type {
   InstanceSchedulerHeartbeatAgent,
 } from "./heartbeat.js";
 export type { LiveEvent } from "./live.js";
-export type { DashboardSummary } from "./dashboard.js";
+export type { DashboardRunActivityDay, DashboardSummary } from "./dashboard.js";
 export type { ActivityEvent } from "./activity.js";
+export type {
+  UserProfileActivitySummary,
+  UserProfileAgentUsage,
+  UserProfileDailyPoint,
+  UserProfileIdentity,
+  UserProfileIssueSummary,
+  UserProfileProviderUsage,
+  UserProfileResponse,
+  UserProfileWindowStats,
+} from "./user-profile.js";
 export type { SidebarBadges } from "./sidebar-badges.js";
 export type { SidebarOrderPreference } from "./sidebar-preferences.js";
 export type { InboxDismissal } from "./inbox-dismissal.js";
@@ -183,6 +257,7 @@ export type {
   AccessUserProfile,
   CompanyMemberRecord,
   CompanyMembersResponse,
+  ArchiveCompanyMemberResponse,
   CompanyMembership,
   CompanyInviteListResponse,
   CompanyInviteRecord,
@@ -233,6 +308,7 @@ export type {
   PluginJobDeclaration,
   PluginWebhookDeclaration,
   PluginToolDeclaration,
+  PluginEnvironmentDriverDeclaration,
   PluginUiSlotDeclaration,
   PluginLauncherActionDeclaration,
   PluginLauncherRenderDeclaration,
@@ -240,8 +316,13 @@ export type {
   PluginLauncherDeclaration,
   PluginMinimumHostVersion,
   PluginUiDeclaration,
+  PluginDatabaseDeclaration,
+  PluginApiRouteCompanyResolution,
+  PluginApiRouteDeclaration,
   PaperclipPluginManifestV1,
   PluginRecord,
+  PluginDatabaseNamespaceRecord,
+  PluginMigrationRecord,
   PluginStateRecord,
   PluginConfig,
   PluginEntityRecord,
@@ -249,4 +330,8 @@ export type {
   PluginJobRecord,
   PluginJobRunRecord,
   PluginWebhookDeliveryRecord,
+  PluginDatabaseCoreReadTable,
+  PluginDatabaseMigrationStatus,
+  PluginDatabaseNamespaceMode,
+  PluginDatabaseNamespaceStatus,
 } from "./plugin.js";

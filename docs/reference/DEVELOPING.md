@@ -4,7 +4,7 @@ This project can run fully in local dev without setting up PostgreSQL manually.
 
 ## Deployment Modes
 
-For mode definitions and intended CLI behavior, see `docs/reference/DEPLOYMENT-MODES.md`.
+For mode definitions and intended CLI behavior, see `doc/DEPLOYMENT-MODES.md`.
 
 Current implementation status:
 
@@ -42,6 +42,17 @@ This starts:
 `pnpm dev:once` auto-applies pending local migrations by default before starting the dev server.
 
 `pnpm dev` and `pnpm dev:once` are now idempotent for the current repo and instance: if the matching Paperclip dev runner is already alive, Paperclip reports the existing process instead of starting a duplicate.
+
+## Storybook
+
+The board UI Storybook keeps stories and Storybook config under `ui/storybook/` so component review files stay out of the app source routes.
+
+```sh
+pnpm storybook
+pnpm build-storybook
+```
+
+These run the `@paperclipai/ui` Storybook on port `6006` and build the static output to `ui/storybook-static/`.
 
 Inspect or stop the current repo's managed dev runner:
 
@@ -136,11 +147,11 @@ Or use Compose:
 docker compose -f docker/docker-compose.quickstart.yml up --build
 ```
 
-See `docs/reference/DOCKER.md` for API key wiring (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`) and persistence details.
+See `doc/DOCKER.md` for API key wiring (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`) and persistence details.
 
 ## Docker For Untrusted PR Review
 
-For a separate review-oriented container that keeps `codex`/`claude` login state in Docker volumes and checks out PRs into an isolated scratch workspace, see `docs/reference/UNTRUSTED-PR-REVIEW.md`.
+For a separate review-oriented container that keeps `codex`/`claude` login state in Docker volumes and checks out PRs into an isolated scratch workspace, see `doc/UNTRUSTED-PR-REVIEW.md`.
 
 ## Database in Dev (Auto-Handled)
 
@@ -209,7 +220,9 @@ Seed modes:
 - `full` makes a full logical clone of the source instance
 - `--no-seed` creates an empty isolated instance
 
-After `worktree init`, both the server and the CLI auto-load the repo-local `.paperclip/.env` when run inside that worktree, so normal commands like `pnpm dev` and `paperclipai doctor` stay scoped to the worktree instance.
+Seeded worktree instances quarantine copied live execution by default for both `minimal` and `full` seeds. During restore, Paperclip disables copied agent timer heartbeats, resets copied `running` agents to `idle`, blocks and unassigns copied agent-owned `in_progress` issues, and unassigns copied agent-owned `todo`/`in_review` issues. This keeps a freshly booted worktree from starting agents for work already owned by the source instance. Pass `--preserve-live-work` only when you intentionally want the isolated worktree to resume copied assignments.
+
+After `worktree init`, both the server and the CLI auto-load the repo-local `.paperclip/.env` when run inside that worktree, so normal commands like `pnpm dev`, `paperclipai doctor`, and `paperclipai db:backup` stay scoped to the worktree instance.
 
 `pnpm dev` now fails fast in a linked git worktree when `.paperclip/.env` is missing, instead of silently booting against the default instance/port. If that happens, run `paperclipai worktree init` in the worktree first.
 
@@ -222,6 +235,8 @@ That repo-local env also sets:
 - `PAPERCLIP_WORKTREE_COLOR=<hex-color>`
 
 The server/UI use those values for worktree-specific branding such as the top banner and dynamically colored favicon.
+Authenticated worktree servers also use the `PAPERCLIP_INSTANCE_ID` value to scope Better Auth cookie names.
+Browser cookies are shared by host rather than port, so this prevents logging into one `127.0.0.1:<port>` worktree from replacing another worktree server's session cookie.
 
 Print shell exports explicitly when needed:
 
@@ -398,9 +413,35 @@ pnpm dev
 
 If you set `DATABASE_URL`, the server will use that instead of embedded PostgreSQL.
 
-## DB Backups
+## Automatic DB Backups
 
-Paperclip no longer runs its own DB backups. When using Supabase or another managed Postgres, rely on the provider's built-in backups (Supabase performs daily backups by default). For local embedded-postgres development, snapshot the data directory manually if needed.
+Paperclip can run automatic DB backups on a timer. Defaults:
+
+- enabled
+- every 60 minutes
+- retain 30 days
+- backup dir: `~/.paperclip/instances/default/data/backups`
+
+Configure these in:
+
+```sh
+pnpm paperclipai configure --section database
+```
+
+Run a one-off backup manually:
+
+```sh
+pnpm paperclipai db:backup
+# or:
+pnpm db:backup
+```
+
+Environment overrides:
+
+- `PAPERCLIP_DB_BACKUP_ENABLED=true|false`
+- `PAPERCLIP_DB_BACKUP_INTERVAL_MINUTES=<minutes>`
+- `PAPERCLIP_DB_BACKUP_RETENTION_DAYS=<days>`
+- `PAPERCLIP_DB_BACKUP_DIR=/absolute/or/~/path`
 
 ## Secrets in Dev
 
@@ -469,7 +510,7 @@ pnpm paperclipai issue list
 pnpm paperclipai dashboard get
 ```
 
-See full command reference in `docs/reference/CLI.md`.
+See full command reference in `doc/CLI.md`.
 
 ## OpenClaw Invite Onboarding Endpoints
 

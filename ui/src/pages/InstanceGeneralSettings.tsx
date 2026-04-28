@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { PatchInstanceGeneralSettings, BackupRetentionPolicy } from "@paperclipai/shared";
+import {
+  DAILY_RETENTION_PRESETS,
+  WEEKLY_RETENTION_PRESETS,
+  MONTHLY_RETENTION_PRESETS,
+  DEFAULT_BACKUP_RETENTION,
+} from "@paperclipai/shared";
 import { LogOut, SlidersHorizontal } from "lucide-react";
 import { authApi } from "@/api/auth";
 import { healthApi } from "@/api/health";
@@ -73,6 +80,7 @@ export function InstanceGeneralSettings() {
   const censorUsernameInLogs = generalQuery.data?.censorUsernameInLogs === true;
   const keyboardShortcuts = generalQuery.data?.keyboardShortcuts === true;
   const feedbackDataSharingPreference = generalQuery.data?.feedbackDataSharingPreference ?? "prompt";
+  const backupRetention: BackupRetentionPolicy = generalQuery.data?.backupRetention ?? DEFAULT_BACKUP_RETENTION;
 
   return (
     <div className="max-w-4xl space-y-6">
@@ -82,7 +90,8 @@ export function InstanceGeneralSettings() {
           <h1 className="text-lg font-semibold">General</h1>
         </div>
         <p className="text-sm text-muted-foreground">
-          Configure instance-wide defaults that affect how operator-visible logs are displayed.
+          Configure instance-wide preferences including log display, keyboard shortcuts, backup
+          retention, and data sharing.
         </p>
       </div>
 
@@ -159,6 +168,108 @@ export function InstanceGeneralSettings() {
             disabled={updateGeneralMutation.isPending}
             aria-label="Toggle keyboard shortcuts"
           />
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-5">
+        <div className="space-y-5">
+          <div className="space-y-1.5">
+            <h2 className="text-sm font-semibold">Backup retention</h2>
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              Configure how long automatic database backups are retained. Backups run roughly
+              every hour and are compressed with gzip. Within the daily window all backups are
+              kept; beyond that, one backup per week and one per month are preserved.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Daily</h3>
+            <div className="flex flex-wrap gap-2">
+              {DAILY_RETENTION_PRESETS.map((days) => {
+                const active = backupRetention.dailyDays === days;
+                return (
+                  <button
+                    key={days}
+                    type="button"
+                    disabled={updateGeneralMutation.isPending}
+                    className={cn(
+                      "rounded-lg border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                      active
+                        ? "border-foreground bg-accent text-foreground"
+                        : "border-border bg-background hover:bg-accent/50",
+                    )}
+                    onClick={() =>
+                      updateGeneralMutation.mutate({
+                        backupRetention: { ...backupRetention, dailyDays: days },
+                      })
+                    }
+                  >
+                    <div className="text-sm font-medium">{days} days</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Weekly</h3>
+            <div className="flex flex-wrap gap-2">
+              {WEEKLY_RETENTION_PRESETS.map((weeks) => {
+                const active = backupRetention.weeklyWeeks === weeks;
+                const label = weeks === 1 ? "1 week" : `${weeks} weeks`;
+                return (
+                  <button
+                    key={weeks}
+                    type="button"
+                    disabled={updateGeneralMutation.isPending}
+                    className={cn(
+                      "rounded-lg border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                      active
+                        ? "border-foreground bg-accent text-foreground"
+                        : "border-border bg-background hover:bg-accent/50",
+                    )}
+                    onClick={() =>
+                      updateGeneralMutation.mutate({
+                        backupRetention: { ...backupRetention, weeklyWeeks: weeks },
+                      })
+                    }
+                  >
+                    <div className="text-sm font-medium">{label}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Monthly</h3>
+            <div className="flex flex-wrap gap-2">
+              {MONTHLY_RETENTION_PRESETS.map((months) => {
+                const active = backupRetention.monthlyMonths === months;
+                const label = months === 1 ? "1 month" : `${months} months`;
+                return (
+                  <button
+                    key={months}
+                    type="button"
+                    disabled={updateGeneralMutation.isPending}
+                    className={cn(
+                      "rounded-lg border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                      active
+                        ? "border-foreground bg-accent text-foreground"
+                        : "border-border bg-background hover:bg-accent/50",
+                    )}
+                    onClick={() =>
+                      updateGeneralMutation.mutate({
+                        backupRetention: { ...backupRetention, monthlyMonths: months },
+                      })
+                    }
+                  >
+                    <div className="text-sm font-medium">{label}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </section>
 

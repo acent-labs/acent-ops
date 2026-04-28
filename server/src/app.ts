@@ -15,7 +15,9 @@ import { companySkillRoutes } from "./routes/company-skills.js";
 import { agentRoutes } from "./routes/agents.js";
 import { projectRoutes } from "./routes/projects.js";
 import { issueRoutes } from "./routes/issues.js";
+import { issueTreeControlRoutes } from "./routes/issue-tree-control.js";
 import { routineRoutes } from "./routes/routines.js";
+import { environmentRoutes } from "./routes/environments.js";
 import { executionWorkspaceRoutes } from "./routes/execution-workspaces.js";
 import { goalRoutes } from "./routes/goals.js";
 import { approvalRoutes } from "./routes/approvals.js";
@@ -23,10 +25,15 @@ import { secretRoutes } from "./routes/secrets.js";
 import { costRoutes } from "./routes/costs.js";
 import { activityRoutes } from "./routes/activity.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
+import { userProfileRoutes } from "./routes/user-profiles.js";
 import { sidebarBadgeRoutes } from "./routes/sidebar-badges.js";
 import { sidebarPreferenceRoutes } from "./routes/sidebar-preferences.js";
 import { inboxDismissalRoutes } from "./routes/inbox-dismissals.js";
 import { instanceSettingsRoutes } from "./routes/instance-settings.js";
+import {
+  instanceDatabaseBackupRoutes,
+  type InstanceDatabaseBackupService,
+} from "./routes/instance-database-backups.js";
 import { llmRoutes } from "./routes/llms.js";
 import { authRoutes } from "./routes/auth.js";
 import { assetRoutes } from "./routes/assets.js";
@@ -34,12 +41,10 @@ import { accessRoutes } from "./routes/access.js";
 import { pluginRoutes } from "./routes/plugins.js";
 import { adapterRoutes } from "./routes/adapters.js";
 import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
-import { oauthLinkedInRoutes } from "./routes/oauth-linkedin.js";
-import { oauthXRoutes } from "./routes/oauth-x.js";
 import { applyUiBranding } from "./ui-branding.js";
 import { logger } from "./middleware/logger.js";
 import { DEFAULT_LOCAL_PLUGIN_DIR, pluginLoader } from "./services/plugin-loader.js";
-import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
+import { createPluginWorkerManager, type PluginWorkerManager } from "./services/plugin-worker-manager.js";
 import { createPluginJobScheduler } from "./services/plugin-job-scheduler.js";
 import { pluginJobStore } from "./services/plugin-job-store.js";
 import { createPluginToolDispatcher } from "./services/plugin-tool-dispatcher.js";
@@ -52,7 +57,7 @@ import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
 import { createPluginHostServiceCleanup } from "./services/plugin-host-service-cleanup.js";
 import { pluginRegistryService } from "./services/plugin-registry.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
-import type { AuthProviderFlags, BetterAuthSessionResult } from "./auth/better-auth.js";
+import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 import { createCachedViteHtmlRenderer } from "./vite-html-renderer.js";
 
 type UiMode = "none" | "static" | "vite-dev";
@@ -103,7 +108,6 @@ export function shouldEnablePrivateHostnameGuard(opts: {
 export async function createApp(
   db: Db,
   opts: {
-    backgroundDb?: Db;
     uiMode: UiMode;
     serverPort: number;
     storageService: StorageService;
@@ -115,16 +119,18 @@ export async function createApp(
         now?: Date;
       }): Promise<unknown>;
     };
+    databaseBackupService?: InstanceDatabaseBackupService;
     deploymentMode: DeploymentMode;
     deploymentExposure: DeploymentExposure;
     allowedHostnames: string[];
     bindHost: string;
     authReady: boolean;
-    authProviders?: AuthProviderFlags;
     companyDeletionEnabled: boolean;
     instanceId?: string;
     hostVersion?: string;
     localPluginDir?: string;
+    pluginMigrationDb?: Db;
+    pluginWorkerManager?: PluginWorkerManager;
     betterAuthHandler?: express.RequestHandler;
     resolveSession?: (req: ExpressRequest) => Promise<BetterAuthSessionResult | null>;
   },
@@ -166,6 +172,9 @@ export async function createApp(
   }
   app.use(llmRoutes(db));
 
+  const hostServicesDisposers = new Map<string, () => void>();
+  const workerManager = opts.pluginWorkerManager ?? createPluginWorkerManager();
+
   // Mount API routes
   const api = Router();
   api.use(boardMutationGuard());
@@ -175,42 +184,43 @@ export async function createApp(
       deploymentMode: opts.deploymentMode,
       deploymentExposure: opts.deploymentExposure,
       authReady: opts.authReady,
-      authProviders: opts.authProviders,
       companyDeletionEnabled: opts.companyDeletionEnabled,
     }),
   );
   api.use("/companies", companyRoutes(db, opts.storageService));
   api.use(companySkillRoutes(db));
-  api.use(agentRoutes(db));
+  api.use(agentRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(assetRoutes(db, opts.storageService));
   api.use(projectRoutes(db));
-  let pluginToolDispatcherRef: ReturnType<typeof createPluginToolDispatcher> | null = null;
   api.use(issueRoutes(db, opts.storageService, {
     feedbackExportService: opts.feedbackExportService,
-    getToolDispatcher: () => pluginToolDispatcherRef,
+    pluginWorkerManager: workerManager,
   }));
-  api.use(routineRoutes(db));
+  api.use(issueTreeControlRoutes(db));
+  api.use(routineRoutes(db, { pluginWorkerManager: workerManager }));
+  api.use(environmentRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(executionWorkspaceRoutes(db));
   api.use(goalRoutes(db));
-  api.use(approvalRoutes(db));
+  api.use(approvalRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(secretRoutes(db));
-  api.use(costRoutes(db));
+  api.use(costRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(activityRoutes(db));
   api.use(dashboardRoutes(db));
+  api.use(userProfileRoutes(db));
   api.use(sidebarBadgeRoutes(db));
   api.use(sidebarPreferenceRoutes(db));
   api.use(inboxDismissalRoutes(db));
   api.use(instanceSettingsRoutes(db));
-  const hostServicesDisposers = new Map<string, () => void>();
-  const workerManager = createPluginWorkerManager();
-  const backgroundDb = opts.backgroundDb ?? db;
+  if (opts.databaseBackupService) {
+    api.use(instanceDatabaseBackupRoutes(opts.databaseBackupService));
+  }
   const pluginRegistry = pluginRegistryService(db);
   const eventBus = createPluginEventBus();
   setPluginEventBus(eventBus);
-  const jobStore = pluginJobStore(backgroundDb);
+  const jobStore = pluginJobStore(db);
   const lifecycle = pluginLifecycleManager(db, { workerManager });
   const scheduler = createPluginJobScheduler({
-    db: backgroundDb,
+    db,
     jobStore,
     workerManager,
   });
@@ -219,9 +229,8 @@ export async function createApp(
     lifecycleManager: lifecycle,
     db,
   });
-  pluginToolDispatcherRef = toolDispatcher;
   const jobCoordinator = createPluginJobCoordinator({
-    db: backgroundDb,
+    db,
     lifecycle,
     scheduler,
     jobStore,
@@ -230,7 +239,10 @@ export async function createApp(
   let viteHtmlRenderer: ReturnType<typeof createCachedViteHtmlRenderer> | null = null;
   const loader = pluginLoader(
     db,
-    { localPluginDir: opts.localPluginDir ?? DEFAULT_LOCAL_PLUGIN_DIR },
+    {
+      localPluginDir: opts.localPluginDir ?? DEFAULT_LOCAL_PLUGIN_DIR,
+      migrationDb: opts.pluginMigrationDb,
+    },
     {
       workerManager,
       eventBus,
@@ -247,7 +259,9 @@ export async function createApp(
           const handle = workerManager.getWorker(pluginId);
           if (handle) handle.notify(method, params);
         };
-        const services = buildHostServices(db, pluginId, manifest.id, eventBus, notifyWorker);
+        const services = buildHostServices(db, pluginId, manifest.id, eventBus, notifyWorker, {
+          pluginWorkerManager: workerManager,
+        });
         hostServicesDisposers.set(pluginId, () => services.dispose());
         return createHostClientHandlers({
           pluginId,
@@ -276,8 +290,6 @@ export async function createApp(
       allowedHostnames: opts.allowedHostnames,
     }),
   );
-  api.use(oauthLinkedInRoutes());
-  api.use(oauthXRoutes());
   app.use("/api", api);
   app.use("/api", (_req, res) => {
     res.status(404).json({ error: "API route not found" });
