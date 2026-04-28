@@ -60,3 +60,4 @@ tests/release-smoke/playwright-report/
 
 # Local sales-deck working artifacts (paperclip doc dumps, generated pptx)
 .sales-deck-build/
+config/
