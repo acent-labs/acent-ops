@@ -10,7 +10,6 @@ import { ExternalLink, FileText, MessageSquare, Send, ShieldCheck, Archive, Uplo
 import { Link } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { isExternalCommandCenterHref, normalizeCommandCenterHref } from "@/lib/command-center-links";
 import {
   Dialog,
   DialogContent,
@@ -97,6 +96,31 @@ function primaryHref(item: DeliverableListItem) {
   return issueHref(item);
 }
 
+function isLoopbackHost(hostname: string) {
+  return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+}
+
+function isPaperclipInternalPath(pathname: string) {
+  return pathname === "/issues" || pathname.startsWith("/issues/") || pathname.startsWith("/api/assets/");
+}
+
+function normalizeOpenHref(href: string) {
+  if (!/^https?:\/\//i.test(href)) return href;
+  try {
+    const url = new URL(href);
+    if (isLoopbackHost(url.hostname) || isPaperclipInternalPath(url.pathname)) {
+      return `${url.pathname}${url.search}${url.hash}`;
+    }
+  } catch {
+    return href;
+  }
+  return href;
+}
+
+function isExternalHref(href: string) {
+  return /^https?:\/\//i.test(href);
+}
+
 const deliverableChannels = new Set(["x", "linkedin", "blog", "homepage", "deck"]);
 
 function isDeliverableChannel(value: string): value is NonNullable<WorkProductSteeringRequest["channel"]> {
@@ -162,8 +186,8 @@ function DeliverableCard({
   onAction: (item: DeliverableListItem, action: WorkProductSteeringAction) => void;
 }) {
   const meta = metadataFor(item);
-  const href = normalizeCommandCenterHref(primaryHref(item));
-  const sourceHref = normalizeCommandCenterHref(issueHref(item));
+  const href = normalizeOpenHref(primaryHref(item));
+  const sourceHref = normalizeOpenHref(issueHref(item));
   const sourceSystem = typeof meta.sourceSystem === "string" ? meta.sourceSystem : item.workProduct.provider;
   const reviewRequest = typeof meta.reviewRequest === "string" ? meta.reviewRequest : "no_action";
   const actionButtonClass =
@@ -211,7 +235,7 @@ function DeliverableCard({
         </div>
 
         <div className="grid min-w-0 grid-cols-2 gap-2 md:flex md:flex-wrap md:items-center">
-          {isExternalCommandCenterHref(href) ? (
+          {isExternalHref(href) ? (
             <a href={href} target="_blank" rel="noreferrer" className={actionLinkClass}>
               <Button size="xs" variant="outline" className={actionButtonClass}>
                 <ExternalLink className="h-3.5 w-3.5" />

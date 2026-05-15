@@ -1,6 +1,6 @@
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { agents, approvals, companies, costEvents, heartbeatRuns, issues } from "@paperclipai/db";
+import { agents, approvals, companies, costEvents, heartbeatRuns, issues, issueWorkProducts } from "@paperclipai/db";
 import { notFound } from "../errors.js";
 import { budgetService } from "./budgets.js";
 
@@ -112,6 +112,16 @@ export function dashboardService(db: Db) {
         )
         .groupBy(runActivityDayExpr, heartbeatRuns.status);
 
+      const [deliverableCounts] = await db
+        .select({
+          needsReview: sql<number>`count(*) filter (where ${issueWorkProducts.reviewState} = 'needs_board_review')::double precision`,
+          publishQueue: sql<number>`count(*) filter (where ${issueWorkProducts.status} = 'queued_for_publish')::double precision`,
+          openClawEvidence: sql<number>`count(*) filter (where ${issueWorkProducts.metadata}->>'deliverableKind' = 'action_evidence')::double precision`,
+        })
+        .from(issueWorkProducts)
+        .innerJoin(issues, eq(issueWorkProducts.issueId, issues.id))
+        .where(and(eq(issueWorkProducts.companyId, companyId), isNull(issues.hiddenAt)));
+
       const runActivity = new Map(
         runActivityDays.map((date) => [
           date,
@@ -149,6 +159,11 @@ export function dashboardService(db: Db) {
           monthUtilizationPercent: Number(utilization.toFixed(2)),
         },
         pendingApprovals,
+        deliverables: {
+          needsReview: Number(deliverableCounts?.needsReview ?? 0),
+          publishQueue: Number(deliverableCounts?.publishQueue ?? 0),
+          openClawEvidence: Number(deliverableCounts?.openClawEvidence ?? 0),
+        },
         budgets: {
           activeIncidents: budgetOverview.activeIncidents.length,
           pendingApprovals: budgetOverview.pendingApprovalCount,

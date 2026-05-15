@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { agents, companies, createDb, heartbeatRuns } from "@paperclipai/db";
+import { agents, companies, createDb, heartbeatRuns, issues, issueWorkProducts } from "@paperclipai/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -47,6 +47,8 @@ describeEmbeddedPostgres("dashboard service", () => {
   }, 20_000);
 
   afterEach(async () => {
+    await db.delete(issueWorkProducts);
+    await db.delete(issues);
     await db.delete(heartbeatRuns);
     await db.delete(agents);
     await db.delete(companies);
@@ -164,6 +166,88 @@ describeEmbeddedPostgres("dashboard service", () => {
       failed: 2,
       other: 1,
       total: 3,
+    });
+  });
+
+  it("includes deliverable review, publish, and evidence counts", async () => {
+    const companyId = randomUUID();
+    const hiddenIssueId = randomUUID();
+    const visibleIssueId = randomUUID();
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(issues).values([
+      {
+        id: visibleIssueId,
+        companyId,
+        title: "Visible deliverables",
+        status: "in_progress",
+      },
+      {
+        id: hiddenIssueId,
+        companyId,
+        title: "Hidden deliverables",
+        status: "in_progress",
+        hiddenAt: new Date(),
+      },
+    ]);
+    await db.insert(issueWorkProducts).values([
+      {
+        id: randomUUID(),
+        companyId,
+        issueId: visibleIssueId,
+        type: "document",
+        provider: "paperclip",
+        title: "Founder review brief",
+        status: "ready_for_review",
+        reviewState: "needs_board_review",
+        metadata: { deliverableKind: "briefing" },
+      },
+      {
+        id: randomUUID(),
+        companyId,
+        issueId: visibleIssueId,
+        type: "document",
+        provider: "paperclip",
+        title: "Queued post",
+        status: "queued_for_publish",
+        reviewState: "approved",
+        metadata: { deliverableKind: "social_post", channel: "x" },
+      },
+      {
+        id: randomUUID(),
+        companyId,
+        issueId: visibleIssueId,
+        type: "document",
+        provider: "paperclip",
+        title: "OpenClaw proof",
+        status: "published",
+        reviewState: "approved",
+        metadata: { deliverableKind: "action_evidence", sourceSystem: "openclaw" },
+      },
+      {
+        id: randomUUID(),
+        companyId,
+        issueId: hiddenIssueId,
+        type: "document",
+        provider: "paperclip",
+        title: "Hidden proof",
+        status: "queued_for_publish",
+        reviewState: "needs_board_review",
+        metadata: { deliverableKind: "action_evidence" },
+      },
+    ]);
+
+    const summary = await dashboardService(db).summary(companyId);
+
+    expect(summary.deliverables).toEqual({
+      needsReview: 1,
+      publishQueue: 1,
+      openClawEvidence: 1,
     });
   });
 });

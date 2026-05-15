@@ -47,9 +47,8 @@ Cadence goal: **bi-weekly**. 30+ commits behind upstream is the warning zone; 10
 
 | File | Change | Reason | Path to remove |
 |---|---|---|---|
-| `server/src/routes/issues.ts` | Deliverables X publish-on-approve, work-product markdown extraction, pagination offset | Command Center deliverables workflow for ACENT content pipeline | Move logic into a plugin via `plugin.orchestration` host APIs (#4114) |
+| `server/src/routes/issues.ts` | Deliverables X publish-on-approve, work-product markdown extraction, pagination offset | ACENT content pipeline deliverables workflow | Move logic into a plugin via `plugin.orchestration` host APIs (#4114) |
 | `server/src/services/work-products.ts` | Minor extension for deliverable publish flow | Same as above | Same as above |
-| `ui/src/pages/CommandCenter.tsx` | Deliverables tab pagination (page size 6) | ACENT deliverables volume | Keep as UI customization — upstream is unlikely to add this exact feature |
 | `ui/src/components/DeliverablesPanel.tsx` | "Approve & Publish" button variant for X deliverables | Paired with server route change | Same as above |
 | `ui/src/components/ui/button.tsx`, `tabs.tsx` | `cursor-pointer` added to class lists | UI polish | **Send back upstream as PR** — generic UX improvement |
 | `skills/paperclip/SKILL.md` | Deliverable registration guidance | ACENT operator workflow | Keep — this is agent-facing documentation |
@@ -61,7 +60,6 @@ Cadence goal: **bi-weekly**. 30+ commits behind upstream is the warning zone; 10
 
 **High** — review these every sync:
 - `server/src/routes/issues.ts` (upstream touches this regularly)
-- `ui/src/pages/CommandCenter.tsx`
 
 **Medium** — review when upstream touches deliverables/work-products:
 - `server/src/services/work-products.ts`

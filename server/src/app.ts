@@ -88,6 +88,17 @@ export function resolveViteHmrPort(serverPort: number): number {
   return Math.max(1_024, serverPort - 10_000);
 }
 
+export function resolveViteHmrClientHost(opts: { allowedHostnames: string[]; bindHost: string }): string {
+  const allowedHostname = opts.allowedHostnames.find((value) => value.trim().length > 0)?.trim();
+  if (allowedHostname) return allowedHostname;
+
+  const bindHost = opts.bindHost.trim();
+  if (bindHost === "0.0.0.0" || bindHost === "::" || bindHost.length === 0) {
+    return "127.0.0.1";
+  }
+  return bindHost;
+}
+
 export function shouldServeViteDevHtml(req: ExpressRequest): boolean {
   const pathname = req.path;
   if (VITE_DEV_STATIC_PATHS.has(pathname)) return false;
@@ -358,6 +369,10 @@ export async function createApp(
     const uiRoot = path.resolve(__dirname, "../../ui");
     const publicUiRoot = path.resolve(uiRoot, "public");
     const hmrPort = resolveViteHmrPort(opts.serverPort);
+    const hmrClientHost = resolveViteHmrClientHost({
+      allowedHostnames: opts.allowedHostnames,
+      bindHost: opts.bindHost,
+    });
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       root: uiRoot,
@@ -365,7 +380,7 @@ export async function createApp(
       server: {
         middlewareMode: true,
         hmr: {
-          host: opts.bindHost,
+          host: hmrClientHost,
           port: hmrPort,
           clientPort: hmrPort,
         },

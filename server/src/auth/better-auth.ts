@@ -44,6 +44,13 @@ export function buildBetterAuthAdvancedOptions(input: { disableSecureCookies: bo
   };
 }
 
+export function buildBetterAuthSessionOptions() {
+  return {
+    expiresIn: 60 * 60 * 24 * 30,
+    updateAge: 60 * 60 * 24,
+  };
+}
+
 function headersFromNodeHeaders(rawHeaders: IncomingHttpHeaders): Headers {
   const headers = new Headers();
   for (const [key, raw] of Object.entries(rawHeaders)) {
@@ -120,6 +127,7 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins:
       requireEmailVerification: false,
       disableSignUp: config.authDisableSignUp,
     },
+    session: buildBetterAuthSessionOptions(),
     advanced: buildBetterAuthAdvancedOptions({ disableSecureCookies: isHttpOnly }),
   };
 

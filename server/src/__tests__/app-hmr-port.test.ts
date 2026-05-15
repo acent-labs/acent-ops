@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveViteHmrPort } from "../app.ts";
+import { resolveViteHmrClientHost, resolveViteHmrPort } from "../app.ts";
 
 describe("resolveViteHmrPort", () => {
   it("uses serverPort + 10000 when the result stays in range", () => {
@@ -15,5 +15,40 @@ describe("resolveViteHmrPort", () => {
   it("never returns a privileged or invalid port", () => {
     expect(resolveViteHmrPort(65_535)).toBe(55_535);
     expect(resolveViteHmrPort(9_000)).toBe(19_000);
+  });
+});
+
+describe("resolveViteHmrClientHost", () => {
+  it("prefers the first configured allowed hostname", () => {
+    expect(
+      resolveViteHmrClientHost({
+        allowedHostnames: ["alan-macmini.tail65f5d4.ts.net"],
+        bindHost: "0.0.0.0",
+      }),
+    ).toBe("alan-macmini.tail65f5d4.ts.net");
+  });
+
+  it("keeps a concrete bind host when no allowed hostname is configured", () => {
+    expect(
+      resolveViteHmrClientHost({
+        allowedHostnames: [],
+        bindHost: "127.0.0.1",
+      }),
+    ).toBe("127.0.0.1");
+  });
+
+  it("does not expose an all-interfaces bind address as the browser HMR host", () => {
+    expect(
+      resolveViteHmrClientHost({
+        allowedHostnames: [],
+        bindHost: "0.0.0.0",
+      }),
+    ).toBe("127.0.0.1");
+    expect(
+      resolveViteHmrClientHost({
+        allowedHostnames: [],
+        bindHost: "::",
+      }),
+    ).toBe("127.0.0.1");
   });
 });

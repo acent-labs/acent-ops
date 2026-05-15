@@ -3,6 +3,7 @@ import type { BetterAuthOptions } from "better-auth";
 import { getCookies } from "better-auth/cookies";
 import {
   buildBetterAuthAdvancedOptions,
+  buildBetterAuthSessionOptions,
   deriveAuthCookiePrefix,
   deriveAuthTrustedOrigins,
 } from "../auth/better-auth.js";
@@ -39,6 +40,13 @@ describe("Better Auth cookie scoping", () => {
     expect(buildBetterAuthAdvancedOptions({ disableSecureCookies: true })).toEqual({
       cookiePrefix: "paperclip-pap-worktree",
       useSecureCookies: false,
+    });
+  });
+
+  it("uses long-lived founder-friendly browser sessions", () => {
+    expect(buildBetterAuthSessionOptions()).toEqual({
+      expiresIn: 60 * 60 * 24 * 30,
+      updateAge: 60 * 60 * 24,
     });
   });
 
