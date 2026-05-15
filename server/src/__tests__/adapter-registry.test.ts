@@ -416,7 +416,7 @@ describe("server adapter registry", () => {
     expect(hermesExecuteMock).toHaveBeenCalledWith(ctx);
   });
 
-  it("preserves an explicit Hermes Paperclip API key and does not set promptTemplate when none was configured", async () => {
+  it("preserves an explicit Hermes Paperclip API key and installs the Paperclip-managed prompt", async () => {
     const adapter = requireServerAdapter("hermes_local");
 
     await adapter.execute({
@@ -446,13 +446,18 @@ describe("server adapter registry", () => {
     const [patchedCtx] = hermesExecuteMock.mock.calls[0];
     expect(patchedCtx.agent.adapterConfig.env.PAPERCLIP_API_KEY).toBe("explicit-agent-key");
     expect(patchedCtx.agent.adapterConfig.env.PAPERCLIP_RUN_ID).toBe("run-123");
-    // No custom promptTemplate was set — Hermes must use its built-in default.
-    // Setting promptTemplate here would replace the full default with just the auth guard text,
-    // stripping assigned issue / workflow instructions.
-    expect(patchedCtx.agent.adapterConfig.promptTemplate).toBeUndefined();
+    expect(patchedCtx.agent.adapterConfig.promptTemplate).toContain(
+      "Use Authorization: Bearer $PAPERCLIP_API_KEY",
+    );
+    expect(patchedCtx.agent.adapterConfig.promptTemplate).toContain(
+      "## Freshdesk write path",
+    );
+    expect(patchedCtx.agent.adapterConfig.promptTemplate).toContain(
+      "freshdesk_add_private_note",
+    );
   });
 
-  it("does not set promptTemplate when no custom template is configured, preserving Hermes default", async () => {
+  it("projects Paperclip wake context into Hermes config and env", async () => {
     const adapter = requireServerAdapter("hermes_local");
 
     await adapter.execute({
@@ -467,6 +472,120 @@ describe("server adapter registry", () => {
       },
       runtime: {},
       config: {},
+      context: {
+        paperclipIssue: {
+          id: "issue-123",
+          identifier: "ACE-325",
+          title: "Add Freshdesk private note",
+          description: "Write the Tier 2 answer to Freshdesk ticket 5892.",
+        },
+        paperclipWakeComment: {
+          id: "comment-123",
+          body: "Freshdesk ticket 5892에 private memo 추가",
+        },
+        wakeReason: "issue_assigned",
+      },
+      onLog: async () => {},
+      onMeta: async () => {},
+      onSpawn: async () => {},
+      authToken: "agent-run-jwt",
+    });
+
+    const [patchedCtx] = hermesExecuteMock.mock.calls[0];
+    expect(patchedCtx.config.taskId).toBe("issue-123");
+    expect(patchedCtx.config.taskTitle).toBe("Add Freshdesk private note");
+    expect(patchedCtx.config.commentId).toBe("comment-123");
+    expect(patchedCtx.agent.adapterConfig.taskId).toBe("issue-123");
+    expect(patchedCtx.agent.adapterConfig.taskBody).toContain("ACE-325");
+    expect(patchedCtx.agent.adapterConfig.taskBody).toContain("Freshdesk ticket 5892");
+    expect(patchedCtx.agent.adapterConfig.taskBody).toContain("private memo");
+    expect(patchedCtx.agent.adapterConfig.env.PAPERCLIP_API_KEY).toBe("agent-run-jwt");
+    expect(patchedCtx.agent.adapterConfig.env.PAPERCLIP_TASK_ID).toBe("issue-123");
+    expect(patchedCtx.agent.adapterConfig.env.PAPERCLIP_WAKE_COMMENT_ID).toBe("comment-123");
+    expect(patchedCtx.agent.adapterConfig.env.PAPERCLIP_WAKE_REASON).toBe("issue_assigned");
+    expect(patchedCtx.agent.adapterConfig.promptTemplate).toContain("Do not run a generic inbox sweep");
+    expect(patchedCtx.agent.adapterConfig.promptTemplate).toContain("freshdesk_add_private_note");
+    expect(patchedCtx.agent.adapterConfig.promptTemplate).toContain(
+      "Do not call Freshdesk REST directly in production by default",
+    );
+    expect(patchedCtx.agent.adapterConfig.promptTemplate).toContain(
+      "PAPERCLIP_ALLOW_DIRECT_FRESHDESK_REST=true",
+    );
+  });
+
+  it("projects the wake latestComment body when the comment is only present in the wake payload", async () => {
+    const adapter = requireServerAdapter("hermes_local");
+
+    await adapter.execute({
+      runId: "run-123",
+      agent: {
+        id: "agent-123",
+        companyId: "company-123",
+        name: "Hermes Agent",
+        role: "engineer",
+        adapterType: "hermes_local",
+        adapterConfig: {},
+      },
+      runtime: {},
+      config: {},
+      context: {
+        paperclipWake: {
+          reason: "comment",
+          issue: {
+            id: "issue-123",
+            title: "Freshdesk memo request",
+          },
+          latestComment: {
+            id: "comment-123",
+            body: "Freshdesk ticket 5892에 private memo 추가",
+          },
+        },
+      },
+      onLog: async () => {},
+      onMeta: async () => {},
+      onSpawn: async () => {},
+      authToken: "agent-run-jwt",
+    });
+
+    const [patchedCtx] = hermesExecuteMock.mock.calls[0];
+    expect(patchedCtx.config.taskId).toBe("issue-123");
+    expect(patchedCtx.config.commentId).toBe("comment-123");
+    expect(patchedCtx.agent.adapterConfig.taskBody).toContain(
+      "Freshdesk ticket 5892에 private memo 추가",
+    );
+  });
+
+  it("drops invalid Hermes resume sessions and clears invalid parsed sessions", async () => {
+    hermesExecuteMock.mockResolvedValueOnce({
+      exitCode: 1,
+      signal: null,
+      timedOut: false,
+      sessionParams: { sessionId: "from" },
+      sessionDisplayId: "from",
+      resultJson: {
+        result: "Session not found: from",
+        session_id: "from",
+        mcpToolResults: [{ tool: "freshdesk_add_private_note", status: "failed" }],
+      },
+    });
+
+    const adapter = requireServerAdapter("hermes_local");
+
+    const result = await adapter.execute({
+      runId: "run-123",
+      agent: {
+        id: "agent-123",
+        companyId: "company-123",
+        name: "Hermes Agent",
+        role: "engineer",
+        adapterType: "hermes_local",
+        adapterConfig: {},
+      },
+      runtime: {
+        sessionParams: { sessionId: "20260515_103431" },
+        sessionDisplayId: "20260515_103431",
+      },
+      config: {},
       context: {},
       onLog: async () => {},
       onMeta: async () => {},
@@ -475,10 +594,15 @@ describe("server adapter registry", () => {
     });
 
     const [patchedCtx] = hermesExecuteMock.mock.calls[0];
-    // promptTemplate must remain unset so Hermes uses its built-in heartbeat/task prompt.
-    expect(patchedCtx.agent.adapterConfig.promptTemplate).toBeUndefined();
-    // Auth token is still injected.
-    expect(patchedCtx.agent.adapterConfig.env.PAPERCLIP_API_KEY).toBe("agent-run-jwt");
+    expect(patchedCtx.runtime.sessionParams).toBeNull();
+    expect(patchedCtx.runtime.sessionDisplayId).toBeNull();
+    expect(result.clearSession).toBe(true);
+    expect(result.sessionParams).toBeNull();
+    expect(result.sessionDisplayId).toBeNull();
+    expect(result.resultJson).toMatchObject({ session_id: null });
+    expect(result.resultJson).toMatchObject({
+      mcpToolResults: [{ tool: "freshdesk_add_private_note", status: "failed" }],
+    });
   });
 });
 

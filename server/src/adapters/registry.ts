@@ -1,6 +1,8 @@
 import type {
   AdapterModel,
   AdapterModelProfileDefinition,
+  AdapterRuntime,
+  AdapterExecutionResult,
   AdapterRuntimeCommandSpec,
   ServerAdapterModule,
 } from "./types.js";
@@ -199,6 +201,233 @@ function normalizeHermesConfig<T extends { config?: unknown; agent?: unknown }>(
   }
 
   return ctx;
+}
+
+function readNonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function readObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function readStringRecord(value: unknown): Record<string, string> {
+  const source = readObject(value);
+  const result: Record<string, string> = {};
+  for (const [key, raw] of Object.entries(source)) {
+    if (typeof raw === "string") result[key] = raw;
+  }
+  return result;
+}
+
+function contextString(context: Record<string, unknown>, ...keys: string[]): string | null {
+  for (const key of keys) {
+    const direct = readNonEmptyString(context[key]);
+    if (direct) return direct;
+  }
+  return null;
+}
+
+function nestedContextString(
+  context: Record<string, unknown>,
+  parentKey: string,
+  ...keys: string[]
+): string | null {
+  const parent = readObject(context[parentKey]);
+  for (const key of keys) {
+    const value = readNonEmptyString(parent[key]);
+    if (value) return value;
+  }
+  return null;
+}
+
+function buildHermesTaskBody(context: Record<string, unknown>): string {
+  const parts: string[] = [];
+  const taskMarkdown = readNonEmptyString(context.paperclipTaskMarkdown);
+  if (taskMarkdown) parts.push(taskMarkdown);
+
+  const issue = readObject(context.paperclipIssue);
+  if (!taskMarkdown && Object.keys(issue).length > 0) {
+    const lines = ["Paperclip task context:"];
+    const identifier = readNonEmptyString(issue.identifier);
+    const title = readNonEmptyString(issue.title);
+    const description = readNonEmptyString(issue.description);
+    const id = readNonEmptyString(issue.id);
+    if (identifier || title) lines.push(`- Issue: ${identifier ?? id ?? "unknown"}${title ? ` - ${title}` : ""}`);
+    if (description) lines.push("", "Issue description:", "```text", description, "```");
+    parts.push(lines.join("\n"));
+  }
+
+  const wakeComment = readObject(context.paperclipWakeComment);
+  const wakeLatestComment = readObject(readObject(context.paperclipWake).latestComment);
+  const wakeCommentBody = readNonEmptyString(wakeComment.body) ?? readNonEmptyString(wakeLatestComment.body);
+  if (wakeCommentBody) {
+    parts.push(["Latest wake comment:", "```text", wakeCommentBody, "```"].join("\n"));
+  }
+
+  const wake = readObject(context.paperclipWake);
+  const comments = Array.isArray(wake.comments) ? wake.comments : [];
+  if (!wakeCommentBody && comments.length > 0) {
+    const renderedComments = comments
+      .map((raw, index) => {
+        const comment = readObject(raw);
+        const body = readNonEmptyString(comment.body) ?? "";
+        const createdAt = readNonEmptyString(comment.createdAt) ?? "unknown time";
+        return `${index + 1}. ${createdAt}\n${body}`;
+      })
+      .filter((entry) => entry.trim().length > 0);
+    if (renderedComments.length > 0) {
+      parts.push(["Recent wake comments:", ...renderedComments].join("\n\n"));
+    }
+  }
+
+  const continuation = readObject(readObject(context.paperclipWake).continuationSummary);
+  const continuationBody = readNonEmptyString(continuation.body);
+  if (continuationBody) {
+    parts.push(["Continuation summary:", continuationBody].join("\n\n"));
+  }
+
+  return parts.join("\n\n").trim();
+}
+
+function buildHermesPromptTemplate(existingPromptTemplate: string | null): string {
+  const basePrompt = `You are "{{agentName}}", an AI agent employee in a Paperclip-managed company.
+
+Paperclip operating contract:
+- Work on the assigned Paperclip issue first. Do not run a generic inbox sweep when an Issue ID is present.
+- Use the API Base shown below for Paperclip calls.
+- Use Authorization: Bearer $PAPERCLIP_API_KEY on every Paperclip API request.
+- Use X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID on every Paperclip API request that writes or mutates data.
+- Never use a board, browser, or local-board session for Paperclip API writes.
+- Avoid shell patterns that pipe remote or API output into an interpreter.
+- When the issue asks for an external write, perform it if the required credential environment variables or MCP tools are configured. If credentials/tools are missing, mark the issue blocked and name the missing binding.
+
+Your Paperclip identity:
+  Agent ID: {{agentId}}
+  Company ID: {{companyId}}
+  API Base: {{paperclipApiUrl}}
+  Run ID: {{runId}}
+
+{{#taskId}}
+## Assigned Task
+
+Issue ID: {{taskId}}
+Title: {{taskTitle}}
+
+{{taskBody}}
+
+## Required workflow
+
+1. Read the task context above and perform the requested work.
+2. If you need more Paperclip context, use:
+   curl -sS -H "Authorization: Bearer $PAPERCLIP_API_KEY" "{{paperclipApiUrl}}/issues/{{taskId}}/heartbeat-context"
+3. For comments or issue updates, include both Authorization and X-Paperclip-Run-Id headers.
+4. When the work is complete, post a concise evidence comment and mark the issue done. If the work cannot proceed, mark it blocked with the exact missing owner/action.
+
+## Freshdesk write path
+
+If the task explicitly asks you to add a Freshdesk private note or private memo:
+- Preferred path: call the configured MCP tool named freshdesk_add_private_note.
+- Pass the Freshdesk ticket id, private note body, and private=true to the MCP tool.
+- Do not implement Freshdesk writes inside Paperclip adapter code.
+- Do not call Freshdesk REST directly in production by default.
+- Direct Freshdesk REST fallback is allowed only when PAPERCLIP_ALLOW_DIRECT_FRESHDESK_REST=true is explicitly present and the MCP tool is unavailable:
+  - endpoint: https://$FRESHDESK_DOMAIN/api/v2/tickets/<ticket_id>/notes
+  - method: POST
+  - auth: curl -u "$FRESHDESK_API_KEY:X"
+  - body: {"body":"<memo html/text>","private":true}
+- Do not print the API key.
+- Record the Freshdesk ticket id, MCP tool name, and MCP/HTTP outcome in the Paperclip issue comment.
+- If the MCP tool is unavailable and direct REST fallback is not explicitly enabled, mark the issue blocked instead of pretending the note was written.
+{{/taskId}}
+
+{{#commentId}}
+## Wake Comment
+
+You were woken by comment {{commentId}}. Address that comment before doing any older work.
+{{/commentId}}
+
+{{#noTask}}
+## Heartbeat Wake
+
+No assigned task was provided. Check your Paperclip inbox using Authorization, pick one actionable assigned issue, or report that no work is available.
+{{/noTask}}`;
+
+  if (!existingPromptTemplate) return basePrompt;
+  return `${basePrompt}
+
+## Additional agent instructions
+
+${existingPromptTemplate}`;
+}
+
+const paperclipHermesAgentConfigurationDoc = `${hermesAgentConfigurationDoc}
+
+## Paperclip write-capable runtime notes
+
+Paperclip wraps Hermes with a managed heartbeat prompt that injects the assigned issue, wake comment,
+run-scoped Paperclip JWT, and safe write instructions.
+
+For Freshdesk private notes, bind the ACENT Flow Freshdesk MCP server to Hermes and use the
+freshdesk_add_private_note tool as the preferred write path. Paperclip's Hermes adapter should pass
+the task context and tool-use instruction to Hermes; it should not become the Freshdesk writer.
+
+- freshdesk_add_private_note: preferred MCP tool for private-note writes
+
+Direct REST fallback is not a production default. Enable it only with the explicit
+PAPERCLIP_ALLOW_DIRECT_FRESHDESK_REST=true environment flag, and only when the MCP tool is
+unavailable. If neither the MCP tool nor explicit fallback is available, the agent must mark the
+issue blocked instead of claiming the write happened.
+`;
+
+function isValidHermesSessionId(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "from") return false;
+  if (/^\d{8}_\d{6}_?$/.test(trimmed)) return false;
+  return /^[A-Za-z0-9][A-Za-z0-9_-]{10,}$/.test(trimmed);
+}
+
+function sanitizeHermesRuntime(runtime: AdapterRuntime): AdapterRuntime {
+  const sessionParams = readObject(runtime.sessionParams);
+  const sessionId = readNonEmptyString(sessionParams.sessionId) ?? readNonEmptyString(sessionParams.session_id);
+  if (!sessionId) return runtime;
+  if (isValidHermesSessionId(sessionId)) return runtime;
+  return {
+    ...runtime,
+    sessionId: null,
+    sessionParams: null,
+    sessionDisplayId: null,
+  };
+}
+
+function sanitizeHermesResult(result: AdapterExecutionResult): AdapterExecutionResult {
+  const sessionParams = readObject(result.sessionParams);
+  const sessionId =
+    readNonEmptyString(sessionParams.sessionId) ??
+    readNonEmptyString(sessionParams.session_id) ??
+    readNonEmptyString(result.sessionId);
+  if (!sessionId || isValidHermesSessionId(sessionId)) return result;
+
+  const resultJson = readObject(result.resultJson);
+  const nextResultJson =
+    Object.keys(resultJson).length > 0
+      ? {
+          ...resultJson,
+          session_id: null,
+        }
+      : result.resultJson;
+
+  return {
+    ...result,
+    sessionId: null,
+    sessionParams: null,
+    sessionDisplayId: null,
+    resultJson: nextResultJson,
+    clearSession: true,
+  };
 }
 
 function dedupeAdapterModels(models: AdapterModel[]): AdapterModel[] {
@@ -410,58 +639,97 @@ const hermesLocalAdapter: ServerAdapterModule = {
     if (!normalizedCtx.authToken) return executeHermesLocal(normalizedCtx);
 
     const existingConfig = (normalizedCtx.agent.adapterConfig ?? {}) as Record<string, unknown>;
-    const existingEnv =
-      typeof existingConfig.env === "object" && existingConfig.env !== null && !Array.isArray(existingConfig.env)
-        ? (existingConfig.env as Record<string, string>)
-        : {};
+    const existingEnv = readStringRecord(existingConfig.env);
     const explicitApiKey =
       typeof existingEnv.PAPERCLIP_API_KEY === "string" && existingEnv.PAPERCLIP_API_KEY.trim().length > 0;
     const promptTemplate =
       typeof existingConfig.promptTemplate === "string" && existingConfig.promptTemplate.trim().length > 0
         ? existingConfig.promptTemplate
-        : "";
-    const authGuardPrompt = [
-      "Paperclip API safety rule:",
-      "Use Authorization: Bearer $PAPERCLIP_API_KEY on every Paperclip API request.",
-      "Use X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID on every Paperclip API request that writes or mutates data, including comments and issue updates.",
-      "Never use a board, browser, or local-board session for Paperclip API writes.",
-    ].join("\n");
+        : null;
+    const context = readObject(normalizedCtx.context);
+    const paperclipWake = readObject(context.paperclipWake);
+    const taskId =
+      contextString(context, "taskId", "issueId", "taskKey") ??
+      nestedContextString(context, "paperclipIssue", "id") ??
+      nestedContextString(paperclipWake, "issue", "id");
+    const taskTitle =
+      nestedContextString(context, "paperclipIssue", "title") ??
+      nestedContextString(paperclipWake, "issue", "title") ??
+      contextString(context, "taskTitle", "issueTitle");
+    const commentId =
+      contextString(context, "wakeCommentId", "commentId") ??
+      nestedContextString(context, "paperclipWakeComment", "id") ??
+      nestedContextString(paperclipWake, "latestComment", "id");
+    const wakeReason =
+      contextString(context, "wakeReason", "retryReason") ??
+      readNonEmptyString(paperclipWake.reason);
+    const taskBody = buildHermesTaskBody(context);
+    const wakePayloadJson =
+      existingEnv.PAPERCLIP_WAKE_PAYLOAD_JSON ??
+      (Object.keys(paperclipWake).length > 0 ? JSON.stringify(paperclipWake) : undefined);
 
     const patchedConfig: Record<string, unknown> = {
       ...existingConfig,
+      ...(taskId ? { taskId } : {}),
+      ...(taskTitle ? { taskTitle } : {}),
+      ...(taskBody ? { taskBody } : {}),
+      ...(commentId ? { commentId } : {}),
+      ...(wakeReason ? { wakeReason } : {}),
+      promptTemplate: buildHermesPromptTemplate(promptTemplate),
       env: {
         ...existingEnv,
         ...(!explicitApiKey ? { PAPERCLIP_API_KEY: normalizedCtx.authToken } : {}),
         PAPERCLIP_RUN_ID: normalizedCtx.runId,
+        ...(taskId ? { PAPERCLIP_TASK_ID: taskId } : {}),
+        ...(wakeReason ? { PAPERCLIP_WAKE_REASON: wakeReason } : {}),
+        ...(commentId ? { PAPERCLIP_WAKE_COMMENT_ID: commentId } : {}),
+        ...(wakePayloadJson ? { PAPERCLIP_WAKE_PAYLOAD_JSON: wakePayloadJson } : {}),
       },
     };
 
-    // Only inject the auth guard into promptTemplate when a custom template already exists.
-    // When no custom template is set, Hermes uses its built-in default heartbeat/task prompt —
-    // overwriting it with only the auth guard text would strip the assigned issue/workflow instructions.
-    if (promptTemplate) {
-      patchedConfig.promptTemplate = `${authGuardPrompt}\n\n${promptTemplate}`;
-    }
-
     const patchedCtx = {
       ...normalizedCtx,
+      runtime: sanitizeHermesRuntime(normalizedCtx.runtime),
+      config: {
+        ...normalizedCtx.config,
+        ...(taskId ? { taskId } : {}),
+        ...(taskTitle ? { taskTitle } : {}),
+        ...(taskBody ? { taskBody } : {}),
+        ...(commentId ? { commentId } : {}),
+        ...(wakeReason ? { wakeReason } : {}),
+      },
       agent: {
         ...normalizedCtx.agent,
         adapterConfig: patchedConfig,
       },
     };
 
-    return executeHermesLocal(patchedCtx);
+    return sanitizeHermesResult(await executeHermesLocal(patchedCtx));
   },
   testEnvironment: (ctx) => hermesTestEnvironment(normalizeHermesConfig(ctx) as never),
-  sessionCodec: hermesSessionCodec,
+  sessionCodec: {
+    deserialize(raw) {
+      const params = hermesSessionCodec?.deserialize(raw) ?? null;
+      const sessionId = readNonEmptyString(readObject(params).sessionId);
+      return isValidHermesSessionId(sessionId) ? params : null;
+    },
+    serialize(params) {
+      const serialized = hermesSessionCodec?.serialize(params) ?? null;
+      const sessionId = readNonEmptyString(readObject(serialized).sessionId);
+      return isValidHermesSessionId(sessionId) ? serialized : null;
+    },
+    getDisplayId(params) {
+      const displayId = hermesSessionCodec?.getDisplayId?.(params) ?? null;
+      return isValidHermesSessionId(displayId) ? displayId : null;
+    },
+  },
   listSkills: hermesListSkills,
   syncSkills: hermesSyncSkills,
   models: hermesModels,
   supportsLocalAgentJwt: true,
   supportsInstructionsBundle: false,
   requiresMaterializedRuntimeSkills: false,
-  agentConfigurationDoc: hermesAgentConfigurationDoc,
+  agentConfigurationDoc: paperclipHermesAgentConfigurationDoc,
   detectModel: () => detectModelFromHermes(),
 };
 
