@@ -50,9 +50,13 @@ Authorization: Bearer {PAPERCLIP_API_KEY}
 Content-Type: application/json
 
 { "title": "X 게시 드래프트", "format": "markdown",
-  "body": "<280자 이하의 최종 게시 문구>",
+  "body": "<최종 게시 문구>",
   "changeSummary": "X 게시 드래프트 작성" }
 ```
+
+**길이 규칙:** X는 280 *가중치* 단위로 제한한다 — 한글·CJK 문자는 글자당 **2**,
+ASCII/숫자/기호는 **1**. 따라서 한국어 본문은 실질 ~140자가 한계다. 드래프트는
+이 가중치 기준 280 이하로 쓴다 (정확한 계산은 2-2의 검사 참조).
 
 ### 1-2. 승인 카드 생성
 ```
@@ -90,7 +94,7 @@ GET {PAPERCLIP_API_URL}/api/issues/{issueId}/documents/x-post
 Authorization: Bearer {PAPERCLIP_API_KEY}
 ```
 응답의 `body`가 **제품 오너가 수정했을 수 있는 최종 문구**다. 이걸 게시한다 (드래프트 원본 아님).
-280자를 넘으면 게시하지 말고 코멘트로 보고한다.
+X 가중치 280을 넘으면 (아래 2-2의 검사) 게시하지 말고 코멘트로 보고한다.
 
 ### 2-2. xurl로 게시
 최종 문구를 파일에 저장한 뒤 xurl 원시 모드로 게시한다. `jq`로 JSON 바디를
@@ -100,8 +104,22 @@ Authorization: Bearer {PAPERCLIP_API_KEY}
 # 최종 문구를 파일로 저장 (x-post 문서의 body)
 printf '%s' "<x-post 문서의 body>" > /tmp/x-post.txt
 
-# 280자 확인
-test "$(wc -m < /tmp/x-post.txt)" -le 280 || { echo "280자 초과 — 게시 중단"; exit 1; }
+# X 가중치 길이 확인 — 한글/CJK=2, 그 외=1. 280 초과면 X가 거부하므로 게시 전 차단.
+python3 - <<'PY'
+import sys
+t = open('/tmp/x-post.txt', encoding='utf-8').read()
+def wt(c):
+    o = ord(c)
+    cjk = (0x1100 <= o <= 0x11FF or 0x2E80 <= o <= 0x9FFF or
+           0xA960 <= o <= 0xA97F or 0xAC00 <= o <= 0xD7FF or
+           0xF900 <= o <= 0xFAFF or 0xFF00 <= o <= 0xFF60 or
+           0xFFE0 <= o <= 0xFFE6)
+    return 2 if cjk else 1
+n = sum(wt(c) for c in t)
+print(f'weighted={n}/280')
+sys.exit(0 if n <= 280 else 1)
+PY
+[ $? -eq 0 ] || { echo "X 가중치 280 초과 — 게시 중단, 코멘트로 보고"; exit 1; }
 
 # 게시
 xurl -X POST /2/tweets -d "$(jq -Rs '{text: .}' < /tmp/x-post.txt)"
