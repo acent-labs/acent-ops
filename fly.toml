@@ -1,0 +1,51 @@
+# fly.toml — acent-ops (Paperclip control plane)
+# 로컬에서 구동하던 Paperclip을 fly.io에 호스팅하기 위한 배포 설정.
+# DB는 Supabase(ap-northeast-2 pooler)를 그대로 사용한다.
+app = "acent-ops"
+primary_region = "nrt"
+
+[build]
+  dockerfile = "Dockerfile"
+
+# 비밀이 아닌 런타임 설정. 시크릿 값은 `fly secrets set`으로 별도 주입한다.
+[env]
+  PAPERCLIP_DEPLOYMENT_MODE = "authenticated"
+  PAPERCLIP_DEPLOYMENT_EXPOSURE = "public"
+  PAPERCLIP_PUBLIC_URL = "https://acent-ops.fly.dev"
+  PAPERCLIP_AUTH_PUBLIC_BASE_URL = "https://acent-ops.fly.dev"
+  PAPERCLIP_AUTH_BASE_URL_MODE = "explicit"
+  BETTER_AUTH_URL = "https://acent-ops.fly.dev"
+  PAPERCLIP_ALLOWED_HOSTNAMES = "acent-ops.fly.dev"
+  PAPERCLIP_MIGRATION_AUTO_APPLY = "true"
+  HEARTBEAT_SCHEDULER_ENABLED = "true"
+  LINKEDIN_REDIRECT_URI = "https://acent-ops.fly.dev/api/oauth/linkedin/callback"
+  # Gemini CLI는 신뢰되지 않은 디렉터리에서 실행을 거부한다. 서버가 띄우는
+  # 에이전트 워크스페이스를 신뢰하도록 해 hello probe/실행이 통과하게 한다.
+  GEMINI_CLI_TRUST_WORKSPACE = "true"
+  # fly.io는 영속 볼륨을 부팅마다 root 소유로 마운트한다. USER_GID를 이미지
+  # 기본값(1000)과 다르게 주면 docker-entrypoint.sh가 `chown -R node /paperclip`을
+  # 실행해 볼륨을 runtime 사용자(node)가 쓸 수 있게 교정한다. UID는 1000 유지.
+  USER_GID = "1001"
+
+[http_service]
+  internal_port = 3100
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/api/health"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "60s"
+
+# Paperclip 상태 디렉터리(인스턴스 설정/워크스페이스)를 영속화한다.
+[mounts]
+  source = "paperclip_data"
+  destination = "/paperclip"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "4gb"
