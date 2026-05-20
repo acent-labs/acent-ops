@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { models as codexFallbackModels } from "@paperclipai/adapter-codex-local";
 import { models as cursorFallbackModels } from "@paperclipai/adapter-cursor-local";
+import { models as geminiFallbackModels } from "@paperclipai/adapter-gemini-local";
 import { models as opencodeFallbackModels } from "@paperclipai/adapter-opencode-local";
 import { resetOpenCodeModelsCacheForTests } from "@paperclipai/adapter-opencode-local/server";
 import { listAdapterModels, listServerAdapters, refreshAdapterModels } from "../adapters/index.js";
 import { resetCodexModelsCacheForTests } from "../adapters/codex-models.js";
 import { resetCursorModelsCacheForTests, setCursorModelsRunnerForTests } from "../adapters/cursor-models.js";
+import { resetGeminiModelsCacheForTests } from "../adapters/gemini-models.js";
 
 vi.mock("acpx/runtime", () => ({
   createAcpRuntime: vi.fn(),
@@ -17,10 +19,13 @@ vi.mock("acpx/runtime", () => ({
 describe("adapter model listing", () => {
   beforeEach(() => {
     delete process.env.OPENAI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.GOOGLE_API_KEY;
     delete process.env.PAPERCLIP_OPENCODE_COMMAND;
     resetCodexModelsCacheForTests();
     resetCursorModelsCacheForTests();
     setCursorModelsRunnerForTests(null);
+    resetGeminiModelsCacheForTests();
     resetOpenCodeModelsCacheForTests();
     vi.restoreAllMocks();
   });
@@ -100,6 +105,88 @@ describe("adapter model listing", () => {
 
     const models = await listAdapterModels("codex_local");
     expect(models).toEqual(codexFallbackModels);
+  });
+
+  it("returns gemini fallback models when no Gemini key is available", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const models = await listAdapterModels("gemini_local");
+
+    expect(models).toEqual(geminiFallbackModels);
+    expect(models.some((model) => model.id === "gemini-3.5-flash")).toBe(true);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("loads gemini models dynamically and merges fallback options", async () => {
+    process.env.GEMINI_API_KEY = "gemini-test";
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        models: [
+          {
+            name: "models/gemini-3.5-flash",
+            baseModelId: "gemini-3.5-flash",
+            displayName: "Gemini 3.5 Flash",
+            supportedGenerationMethods: ["generateContent"],
+          },
+          {
+            name: "models/text-embedding-004",
+            baseModelId: "text-embedding-004",
+            displayName: "Text Embedding",
+            supportedGenerationMethods: ["embedContent"],
+          },
+          {
+            name: "models/gemini-3.5-pro-preview",
+            baseModelId: "gemini-3.5-pro-preview",
+            displayName: "Gemini 3.5 Pro Preview",
+            supportedGenerationMethods: ["generateContent"],
+          },
+        ],
+      }),
+    } as Response);
+
+    const first = await listAdapterModels("gemini_local");
+    const second = await listAdapterModels("gemini_local");
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(first).toEqual(second);
+    expect(first.some((model) => model.id === "gemini-3.5-flash")).toBe(true);
+    expect(first.some((model) => model.id === "gemini-3.5-pro-preview")).toBe(true);
+    expect(first.some((model) => model.id === "text-embedding-004")).toBe(false);
+    expect(first.some((model) => model.id === "gemini-flash-latest")).toBe(true);
+  });
+
+  it("refreshes cached gemini models on demand", async () => {
+    process.env.GOOGLE_API_KEY = "google-test";
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          models: [
+            {
+              name: "models/gemini-3.1-pro-preview",
+              supportedGenerationMethods: ["generateContent"],
+            },
+          ],
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          models: [
+            {
+              name: "models/gemini-3.5-pro-preview",
+              supportedGenerationMethods: ["generateContent"],
+            },
+          ],
+        }),
+      } as Response);
+
+    const initial = await listAdapterModels("gemini_local");
+    const refreshed = await refreshAdapterModels("gemini_local");
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(initial.some((model) => model.id === "gemini-3.1-pro-preview")).toBe(true);
+    expect(refreshed.some((model) => model.id === "gemini-3.5-pro-preview")).toBe(true);
   });
 
 

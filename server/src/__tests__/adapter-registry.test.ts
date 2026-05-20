@@ -212,7 +212,7 @@ describe("server adapter registry", () => {
     await expect(listAdapterModelProfiles("gemini_local")).resolves.toEqual([
       expect.objectContaining({
         key: "cheap",
-        adapterConfig: expect.objectContaining({ model: "gemini-2.5-flash-lite" }),
+        adapterConfig: expect.objectContaining({ model: "gemini-3.1-flash-lite" }),
         source: "adapter_default",
       }),
     ]);

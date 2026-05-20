@@ -78,6 +78,7 @@ import {
   models as geminiModels,
   modelProfiles as geminiModelProfiles,
 } from "@paperclipai/adapter-gemini-local";
+import { listGeminiModels, refreshGeminiModels } from "./gemini-models.js";
 import {
   execute as grokExecute,
   listGrokSkills,
@@ -351,6 +352,8 @@ const geminiLocalAdapter: ServerAdapterModule = {
   sessionManagement: getAdapterSessionManagement("gemini_local") ?? undefined,
   models: geminiModels,
   modelProfiles: geminiModelProfiles,
+  listModels: listGeminiModels,
+  refreshModels: refreshGeminiModels,
   supportsLocalAgentJwt: true,
   supportsInstructionsBundle: true,
   instructionsPathKey: "instructionsFilePath",
