@@ -8,6 +8,7 @@ const mockAgentService = vi.hoisted(() => ({
 
 const mockHeartbeatService = vi.hoisted(() => ({
   buildRunOutputSilence: vi.fn(),
+  getRun: vi.fn(),
   getRunIssueSummary: vi.fn(),
   getActiveRunIssueSummaryForAgent: vi.fn(),
   getRunLogAccess: vi.fn(),
@@ -200,6 +201,20 @@ describe("agent live run routes", () => {
     });
     mockHeartbeatService.getActiveRunIssueSummaryForAgent.mockResolvedValue(null);
     mockHeartbeatService.buildRunOutputSilence.mockResolvedValue(null);
+    mockHeartbeatService.getRun.mockResolvedValue({
+      id: "run-1",
+      companyId: "company-1",
+      status: "succeeded",
+      resultJson: {
+        summary: "상담원 검토용 Paperclip 요약입니다.",
+        result: "must-not-use-result",
+        stdout: "must-not-use-stdout",
+      },
+      createdAt: new Date("2026-04-10T09:29:59.000Z"),
+      updatedAt: new Date("2026-04-10T09:31:00.000Z"),
+      finishedAt: new Date("2026-04-10T09:31:00.000Z"),
+      errorCode: null,
+    });
     mockHeartbeatService.getRunLogAccess.mockResolvedValue({
       id: "run-1",
       companyId: "company-1",
@@ -221,6 +236,64 @@ describe("agent live run routes", () => {
       invocationSource: "on_demand",
       triggerDetail: "manual",
     });
+  });
+
+  it("wraps a heartbeat run summary as an Acent Flow M2 async result", async () => {
+    const idempotencyKey = "paperclip-async:v1:acent:freshdesk:5891:prepare_reply";
+
+    const res = await requestApp(
+      await createApp(),
+      (baseUrl) => request(baseUrl)
+        .get("/api/workflows/wf-5891/result")
+        .query({
+          run_id: "run-1",
+          idempotency_key: idempotencyKey,
+          tenant_id: "acent",
+          freshdesk_domain: "acent.freshdesk.com",
+        }),
+    );
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(mockHeartbeatService.getRun).toHaveBeenCalledWith("run-1");
+    expect(res.body.result).toMatchObject({
+      contract_version: "m2.paperclip_async.result.v1",
+      workflow_id: "wf-5891",
+      run_id: "run-1",
+      tenant_id: "acent",
+      platform: "freshdesk",
+      freshdesk_domain: "acent.freshdesk.com",
+      ticket_id: "5891",
+      intent: "prepare_reply",
+      idempotency_key: idempotencyKey,
+      status: "completed",
+      support_draft_ko: "상담원 검토용 Paperclip 요약입니다.",
+    });
+    expect(res.body.result.result_marker).toBe(
+      "<!-- acent-flow:paperclip-result idempotency_key=paperclip-async:v1:acent:freshdesk:5891:prepare_reply workflow_id=wf-5891 -->",
+    );
+    expect(res.body.result.private_note_body).toContain(res.body.result.result_marker);
+    expect(res.body.result.private_note_body).toContain("상담원 검토용 Paperclip 요약입니다.");
+    expect(res.body.result.private_note_body).not.toContain("must-not-use-result");
+    expect(res.body.result.private_note_body).not.toContain("must-not-use-stdout");
+  });
+
+  it("rejects an Acent Flow M2 async result request without Freshdesk domain", async () => {
+    const res = await requestApp(
+      await createApp(),
+      (baseUrl) => request(baseUrl)
+        .get("/api/workflows/wf-5891/result")
+        .query({
+          run_id: "run-1",
+          idempotency_key: "paperclip-async:v1:acent:freshdesk:5891:prepare_reply",
+        }),
+    );
+
+    expect(res.status, JSON.stringify(res.body)).toBe(400);
+    expect(res.body).toMatchObject({
+      code: "ACENT_FLOW_RESULT_QUERY_INVALID",
+      error: "freshdesk_domain is required",
+    });
+    expect(mockHeartbeatService.getRun).not.toHaveBeenCalled();
   });
 
   it("returns a compact active run payload for issue polling", async () => {

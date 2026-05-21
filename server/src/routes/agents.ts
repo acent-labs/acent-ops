@@ -77,6 +77,10 @@ import { redactEventPayload } from "../redaction.js";
 import { redactCurrentUserValue } from "../log-redaction.js";
 import { renderOrgChartSvg, renderOrgChartPng, type OrgNode, type OrgChartStyle, ORG_CHART_STYLES } from "./org-chart-svg.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
+import {
+  buildAcentFlowPaperclipAsyncResult,
+  parseAcentFlowPaperclipResultQuery,
+} from "../services/acent-flow-paperclip-result.js";
 import { runClaudeLogin } from "@paperclipai/adapter-claude-local/server";
 import {
   DEFAULT_ACPX_LOCAL_AGENT,
@@ -3202,6 +3206,41 @@ export function agentRoutes(
         await getCurrentUserRedactionOptions(),
       ),
     );
+  });
+
+  router.get("/workflows/:workflowId/result", async (req: Request, res: Response) => {
+    let query;
+    try {
+      query = parseAcentFlowPaperclipResultQuery(req.query as Record<string, unknown>);
+    } catch (err) {
+      res.status(400).json({
+        code: "ACENT_FLOW_RESULT_QUERY_INVALID",
+        error: err instanceof Error ? err.message : "Invalid result query.",
+      });
+      return;
+    }
+
+    const run = await heartbeat.getRun(query.runId);
+    if (!run) {
+      res.status(404).json({ error: "Heartbeat run not found" });
+      return;
+    }
+    assertCompanyAccess(req, run.companyId);
+    res.json({
+      result: buildAcentFlowPaperclipAsyncResult(
+        {
+          id: run.id,
+          status: run.status,
+          resultJson: run.resultJson as Record<string, unknown> | null,
+          createdAt: run.createdAt,
+          updatedAt: run.updatedAt,
+          finishedAt: run.finishedAt,
+          errorCode: run.errorCode,
+        },
+        query,
+        req.params.workflowId as string,
+      ),
+    });
   });
 
   router.post("/heartbeat-runs/:runId/cancel", async (req, res) => {
