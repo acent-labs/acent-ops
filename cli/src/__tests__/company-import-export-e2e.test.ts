@@ -156,6 +156,8 @@ function createServerEnv(
   env.HEARTBEAT_SCHEDULER_ENABLED = "false";
   env.PAPERCLIP_MIGRATION_AUTO_APPLY = "true";
   env.PAPERCLIP_UI_DEV_MIDDLEWARE = "false";
+  env.PAPERCLIP_DEPLOYMENT_MODE = "local_trusted";
+  env.PAPERCLIP_DEPLOYMENT_EXPOSURE = "private";
 
   return env;
 }

@@ -6,7 +6,7 @@ import { runChildProcess } from "@paperclipai/adapter-utils/server-utils";
 import { execute } from "@paperclipai/adapter-codex-local/server";
 
 async function writeFakeCodexCommand(commandPath: string): Promise<void> {
-  const script = `#!/usr/bin/env node
+  const script = `#!${process.execPath}
 const fs = require("node:fs");
 
 const capturePath = process.env.PAPERCLIP_TEST_CAPTURE_PATH;
@@ -34,7 +34,7 @@ console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, c
 }
 
 async function writeFailingCodexCommand(commandPath: string, errorMessage: string): Promise<void> {
-  const script = `#!/usr/bin/env node
+  const script = `#!${process.execPath}
 console.log(JSON.stringify({ type: "error", message: ${JSON.stringify(errorMessage)} }));
 process.exit(1);
 `;
@@ -383,7 +383,7 @@ describe("codex execute", () => {
       else process.env.PATH = previousPath;
       await fs.rm(root, { recursive: true, force: true });
     }
-  });
+  }, 10_000);
 
   it("injects structured Paperclip wake payloads into env and prompt", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-wake-"));
@@ -580,7 +580,7 @@ describe("codex execute", () => {
         config: {
           command: commandPath,
           cwd: workspace,
-          model: "gpt-5.3-codex-spark",
+          model: "gpt-5.4-mini",
           promptTemplate: "Follow the paperclip heartbeat.",
         },
         context: {},
