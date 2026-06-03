@@ -114,6 +114,15 @@ const emptyOverlay: AgentConfigOverlay = {
 /** Stable empty object used as fallback for missing env config to avoid new-object-per-render. */
 const EMPTY_ENV: Record<string, EnvBinding> = {};
 
+export function supportsAdapterModelRefresh(adapterType: string): boolean {
+  return (
+    adapterType === "claude_local"
+    || adapterType === "codex_local"
+    || adapterType === "acpx_local"
+    || adapterType === "gemini_local"
+  );
+}
+
 function isOverlayDirty(o: AgentConfigOverlay): boolean {
   return (
     Object.keys(o.identity).length > 0 ||
@@ -1006,9 +1015,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                       return result.data?.model ?? null;
                     }}
                 onRefreshModels={
-                  adapterType === "codex_local"
-                    || adapterType === "acpx_local"
-                    || adapterType === "gemini_local"
+                  supportsAdapterModelRefresh(adapterType)
                     ? handleRefreshModels
                     : undefined
                 }

@@ -1,11 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { models as claudeFallbackModels } from "@paperclipai/adapter-claude-local";
+import { resetClaudeModelsCacheForTests } from "@paperclipai/adapter-claude-local/server";
 import { models as codexFallbackModels } from "@paperclipai/adapter-codex-local";
 import { models as cursorFallbackModels } from "@paperclipai/adapter-cursor-local";
 import { models as geminiFallbackModels } from "@paperclipai/adapter-gemini-local";
 import { models as opencodeFallbackModels } from "@paperclipai/adapter-opencode-local";
 import { resetOpenCodeModelsCacheForTests } from "@paperclipai/adapter-opencode-local/server";
 import { listAdapterModels, listServerAdapters, refreshAdapterModels } from "../adapters/index.js";
-import { resetCodexModelsCacheForTests } from "../adapters/codex-models.js";
+import {
+  parseCodexDebugModelsOutput,
+  resetCodexModelsCacheForTests,
+  setCodexModelsRunnerForTests,
+} from "../adapters/codex-models.js";
 import { resetCursorModelsCacheForTests, setCursorModelsRunnerForTests } from "../adapters/cursor-models.js";
 import { resetGeminiModelsCacheForTests } from "../adapters/gemini-models.js";
 
@@ -21,7 +27,13 @@ describe("adapter model listing", () => {
     delete process.env.OPENAI_API_KEY;
     delete process.env.GEMINI_API_KEY;
     delete process.env.GOOGLE_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_BASE_URL;
+    delete process.env.ANTHROPIC_BEDROCK_BASE_URL;
+    delete process.env.CLAUDE_CODE_USE_BEDROCK;
+    delete process.env.PAPERCLIP_CODEX_COMMAND;
     delete process.env.PAPERCLIP_OPENCODE_COMMAND;
+    resetClaudeModelsCacheForTests();
     resetCodexModelsCacheForTests();
     resetCursorModelsCacheForTests();
     setCursorModelsRunnerForTests(null);
@@ -42,16 +54,119 @@ describe("adapter model listing", () => {
     expect(adapter?.models?.some((model) => model.label.startsWith("Codex: "))).toBe(true);
   });
 
-  it("returns codex fallback models when no OpenAI key is available", async () => {
+  it("parses the Codex CLI model catalog and excludes hidden internal models", () => {
+    const models = parseCodexDebugModelsOutput(JSON.stringify({
+      models: [
+        { slug: "gpt-5.5", display_name: "GPT-5.5", visibility: "list" },
+        { slug: "codex-auto-review", display_name: "Codex Auto Review", visibility: "hide" },
+        { slug: "gpt-5.3-codex-spark", display_name: "GPT-5.3-Codex-Spark", visibility: "list" },
+      ],
+    }));
+
+    expect(models).toEqual([
+      { id: "gpt-5.5", label: "gpt-5.5" },
+      { id: "gpt-5.3-codex-spark", label: "gpt-5.3-codex-spark" },
+    ]);
+  });
+
+  it("loads Codex models from the local CLI catalog without an OpenAI API key", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
+    setCodexModelsRunnerForTests(() => ({
+      status: 0,
+      stdout: JSON.stringify({
+        models: [
+          { slug: "gpt-5.5", visibility: "list" },
+          { slug: "gpt-5.4", visibility: "list" },
+          { slug: "codex-auto-review", visibility: "hide" },
+        ],
+      }),
+      stderr: "",
+      hasError: false,
+    }));
+
     const models = await listAdapterModels("codex_local");
 
-    expect(models).toEqual(codexFallbackModels);
+    expect(models).toEqual([
+      { id: "gpt-5.5", label: "gpt-5.5" },
+      { id: "gpt-5.4", label: "gpt-5.4" },
+    ]);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("loads codex models dynamically and merges fallback options", async () => {
+  it("returns claude fallback models including the latest Opus alias when no Anthropic key is available", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const models = await listAdapterModels("claude_local");
+
+    expect(models).toEqual(claudeFallbackModels);
+    expect(models.some((model) => model.id === "claude-opus-4-8")).toBe(true);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("loads claude models dynamically and merges fallback options", async () => {
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [
+          { id: "claude-sonnet-4-20250514", display_name: "Claude Sonnet 4" },
+          { id: "claude-opus-4-8-20260529", display_name: "Claude Opus 4.8" },
+        ],
+      }),
+    } as Response);
+
+    const first = await listAdapterModels("claude_local");
+    const second = await listAdapterModels("claude_local");
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(first).toEqual(second);
+    expect(first.some((model) => model.id === "claude-opus-4-8-20260529")).toBe(true);
+    expect(first.some((model) => model.id === "claude-opus-4-8")).toBe(true);
+  });
+
+  it("refreshes cached claude models on demand", async () => {
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: [{ id: "claude-sonnet-4-20250514", display_name: "Claude Sonnet 4" }],
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: [{ id: "claude-opus-4-8-20260529", display_name: "Claude Opus 4.8" }],
+        }),
+      } as Response);
+
+    const initial = await listAdapterModels("claude_local");
+    const refreshed = await refreshAdapterModels("claude_local");
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(initial.some((model) => model.id === "claude-sonnet-4-20250514")).toBe(true);
+    expect(refreshed.some((model) => model.id === "claude-opus-4-8-20260529")).toBe(true);
+  });
+
+  it("falls back to static claude models when Anthropic model discovery fails", async () => {
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({}),
+    } as Response);
+
+    const models = await listAdapterModels("claude_local");
+    expect(models).toEqual(claudeFallbackModels);
+  });
+
+  it("falls back to OpenAI model discovery when Codex CLI discovery fails", async () => {
     process.env.OPENAI_API_KEY = "sk-test";
+    setCodexModelsRunnerForTests(() => ({
+      status: 1,
+      stdout: "",
+      stderr: "codex debug models failed",
+      hasError: false,
+    }));
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -72,31 +187,37 @@ describe("adapter model listing", () => {
   });
 
   it("refreshes cached codex models on demand", async () => {
-    process.env.OPENAI_API_KEY = "sk-test";
-    const fetchSpy = vi.spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          data: [{ id: "gpt-5" }],
-        }),
-      } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          data: [{ id: "gpt-5.5" }],
-        }),
-      } as Response);
+    const runner = vi.fn()
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: JSON.stringify({ models: [{ slug: "gpt-5.4", visibility: "list" }] }),
+        stderr: "",
+        hasError: false,
+      })
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: JSON.stringify({ models: [{ slug: "gpt-5.5", visibility: "list" }] }),
+        stderr: "",
+        hasError: false,
+      });
+    setCodexModelsRunnerForTests(runner);
 
     const initial = await listAdapterModels("codex_local");
     const refreshed = await refreshAdapterModels("codex_local");
 
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
-    expect(initial.some((model) => model.id === "gpt-5")).toBe(true);
-    expect(refreshed.some((model) => model.id === "gpt-5.5")).toBe(true);
+    expect(runner).toHaveBeenCalledTimes(2);
+    expect(initial).toEqual([{ id: "gpt-5.4", label: "gpt-5.4" }]);
+    expect(refreshed).toEqual([{ id: "gpt-5.5", label: "gpt-5.5" }]);
   });
 
-  it("falls back to static codex models when OpenAI model discovery fails", async () => {
+  it("falls back to static codex models when Codex CLI and OpenAI model discovery fail", async () => {
     process.env.OPENAI_API_KEY = "sk-test";
+    setCodexModelsRunnerForTests(() => ({
+      status: 1,
+      stdout: "",
+      stderr: "codex debug models failed",
+      hasError: false,
+    }));
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: false,
       status: 401,

@@ -1,6 +1,6 @@
 # fly.toml — acent-ops (Paperclip control plane)
-# 로컬에서 구동하던 Paperclip을 fly.io에 호스팅하기 위한 배포 설정.
-# DB는 Supabase(ap-northeast-2 pooler)를 그대로 사용한다.
+# 현재 운영은 로컬 Paperclip + embedded Postgres 기준이다.
+# 이 파일은 Fly 재배포가 필요할 때 참고하는 legacy 배포 설정이다.
 app = "acent-ops"
 primary_region = "nrt"
 
