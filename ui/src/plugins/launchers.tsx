@@ -777,6 +777,7 @@ function DefaultLauncherTrigger({
 type PluginLauncherOutletProps = {
   placementZones: PluginLauncherPlacementZone[];
   context: PluginLauncherContext;
+  enabled?: boolean;
   entityType?: PluginUiSlotEntityType | null;
   className?: string;
   itemClassName?: string;
@@ -786,6 +787,7 @@ type PluginLauncherOutletProps = {
 export function PluginLauncherOutlet({
   placementZones,
   context,
+  enabled = true,
   entityType,
   className,
   itemClassName,
@@ -796,7 +798,7 @@ export function PluginLauncherOutlet({
     placementZones,
     entityType,
     companyId: context.companyId,
-    enabled: !!context.companyId,
+    enabled: enabled && !!context.companyId,
   });
 
   if (errorMessage) {

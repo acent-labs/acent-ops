@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { and, asc, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt, ne, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   agents as agentsTable,
@@ -3175,7 +3175,7 @@ export function companySkillService(db: Db) {
   }
 
   async function list(companyId: string, query: CompanySkillListQuery = {}): Promise<CompanySkillListItem[]> {
-    const [dbRows, folderListing] = await Promise.all([db
+    const [dbRows, folderListing, agentRows] = await Promise.all([db
       .select({
         id: companySkills.id,
         companyId: companySkills.companyId,
@@ -3213,6 +3213,10 @@ export function companySkillService(db: Db) {
       .orderBy(asc(companySkills.name), asc(companySkills.key))
       .then((entries) => entries.map((entry) => toCompanySkillListRow(entry as CompanySkillListDbRow))),
       folderSvc.list(companyId, "skill"),
+      db
+        .select({ adapterConfig: agentsTable.adapterConfig })
+        .from(agentsTable)
+        .where(and(eq(agentsTable.companyId, companyId), ne(agentsTable.status, "terminated"))),
     ]);
     const folderPaths = new Map(folderListing.folders.map((folder) => [folder.id, folder.path]));
     const rows = dbRows.map((skill) => ({
@@ -3226,7 +3230,6 @@ export function companySkillService(db: Db) {
         ? await folderSvc.descendantIds(companyId, "skill", query.folderId)
         : new Set([query.folderId]);
     }
-    const agentRows = await agents.list(companyId);
     const q = query.q?.trim().toLowerCase() ?? "";
     const categories = new Set(
       (query.categories ?? [])

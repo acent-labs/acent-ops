@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Outlet, useLocation, useNavigate, useNavigationType, useParams } from "@/lib/router";
 import { Sidebar } from "./Sidebar";
@@ -7,24 +7,17 @@ import { CompanySettingsNav } from "./access/CompanySettingsNav";
 import { AppsSidebar } from "./AppsSidebar";
 import { AppDetailSidebar } from "./AppConnectionSidebar";
 import { BreadcrumbBar } from "./BreadcrumbBar";
-import { PropertiesPanel } from "./PropertiesPanel";
-import { CommandPalette } from "./CommandPalette";
-import { NewIssueDialog } from "./NewIssueDialog";
-import { NewProjectDialog } from "./NewProjectDialog";
-import { NewGoalDialog } from "./NewGoalDialog";
-import { NewAgentDialog } from "./NewAgentDialog";
-import { KeyboardShortcutsCheatsheet } from "./KeyboardShortcutsCheatsheet";
 import { ToastViewport } from "./ToastViewport";
 import { MobileBottomNav } from "./MobileBottomNav";
 import { WorktreeBanner } from "./WorktreeBanner";
-import { DevRestartBanner } from "./DevRestartBanner";
 import { StandaloneBrowserControls } from "./StandaloneBrowserControls";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
 import { SidebarShell } from "./SidebarShell";
 import { SecondarySidebar } from "./SecondarySidebar";
 import { SidebarAccountMenu } from "./SidebarAccountMenu";
-import { useDialogActions } from "../context/DialogContext";
+import { useDialogActions, useDialogState } from "../context/DialogContext";
 import { GeneralSettingsProvider } from "../context/GeneralSettingsContext";
+import { EditorAutocompleteProvider } from "../context/EditorAutocompleteContext";
 import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
@@ -47,6 +40,15 @@ import { pinDocumentScrollToZero } from "../lib/pin-document-scroll";
 import { cn } from "../lib/utils";
 import { NotFoundPage } from "../pages/NotFound";
 import { PluginSlotMount, resolveRouteSidebarSlot, usePluginSlots } from "../plugins/slots";
+
+const NewIssueDialog = lazy(() => import("./NewIssueDialog").then((module) => ({ default: module.NewIssueDialog })));
+const NewProjectDialog = lazy(() => import("./NewProjectDialog").then((module) => ({ default: module.NewProjectDialog })));
+const NewGoalDialog = lazy(() => import("./NewGoalDialog").then((module) => ({ default: module.NewGoalDialog })));
+const NewAgentDialog = lazy(() => import("./NewAgentDialog").then((module) => ({ default: module.NewAgentDialog })));
+const CommandPalette = lazy(() => import("./CommandPalette").then((module) => ({ default: module.CommandPalette })));
+const PropertiesPanel = lazy(() => import("./PropertiesPanel").then((module) => ({ default: module.PropertiesPanel })));
+const KeyboardShortcutsCheatsheet = lazy(() => import("./KeyboardShortcutsCheatsheet").then((module) => ({ default: module.KeyboardShortcutsCheatsheet })));
+const DevRestartBanner = lazy(() => import("./DevRestartBanner").then((module) => ({ default: module.DevRestartBanner })));
 
 function getCompanyRouteSegment(pathname: string, companyPrefix: string | undefined): string | null {
   return getCompanyPathSegments(pathname, companyPrefix)[0]?.toLowerCase() ?? null;
@@ -95,7 +97,8 @@ export function Layout() {
     setForceCollapsed,
   } = useSidebar();
   const { openNewIssue, openOnboarding } = useDialogActions();
-  const { togglePanelVisible } = usePanel();
+  const { newIssueOpen, newProjectOpen, newGoalOpen, newAgentOpen } = useDialogState();
+  const { togglePanelVisible, panelContent } = usePanel();
   // Optional: Layout also renders in harnesses without a ToastProvider.
   const pushToast = useOptionalToastActions()?.pushToast ?? null;
   const {
@@ -113,7 +116,6 @@ export function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const navigationType = useNavigationType();
-  const { enabled: appsEnabled } = useAppsEnabled();
   const isCompanySettingsRoute = [
     "/company/settings",
     "/company/export",
@@ -152,12 +154,37 @@ export function Layout() {
     () => matchedPluginRoutePath?.toLowerCase() ?? getCompanyRouteSegment(location.pathname, companyPrefix),
     [companyPrefix, location.pathname, matchedPluginRoutePath],
   );
+  const companyRouteSegment = getCompanyRouteSegment(location.pathname, companyPrefix);
+  const isDashboardRoute = companyRouteSegment === "dashboard";
+  const isStagedInitialRoute = isDashboardRoute || isSkillsRoute;
+  const [dashboardLoadPhase, setDashboardLoadPhase] = useState(() => isStagedInitialRoute ? 0 : 2);
+  // Keep Dashboard and Skills critical reads alone, then load navigation data
+  // and non-critical chrome in separate waves.
+  useEffect(() => {
+    if (!isStagedInitialRoute) {
+      setDashboardLoadPhase(2);
+      return;
+    }
+    setDashboardLoadPhase(0);
+    const sidebarTimer = window.setTimeout(() => setDashboardLoadPhase(1), 2_500);
+    const secondaryTimer = window.setTimeout(() => setDashboardLoadPhase(2), 12_000);
+    return () => {
+      window.clearTimeout(sidebarTimer);
+      window.clearTimeout(secondaryTimer);
+    };
+  }, [isStagedInitialRoute]);
+  const sidebarDataEnabled = !isStagedInitialRoute || dashboardLoadPhase >= 1;
+  const secondaryQueriesEnabled = !isStagedInitialRoute || dashboardLoadPhase >= 2;
+  const { enabled: appsEnabled } = useAppsEnabled(secondaryQueriesEnabled);
+  const editorAutocompleteEnabled =
+    !isStagedInitialRoute || secondaryQueriesEnabled ||
+    newIssueOpen || newProjectOpen || newGoalOpen || newAgentOpen;
   const routeSidebarCompanyId = matchedCompany?.id ?? null;
   const routeSidebarCompanyPrefix = matchedCompany?.issuePrefix ?? null;
   const { slots: routeSidebarSlots } = usePluginSlots({
     slotTypes: ["page", "routeSidebar"],
     companyId: routeSidebarCompanyId,
-    enabled: Boolean(routeSidebarCompanyId && pluginRoutePath),
+    enabled: secondaryQueriesEnabled && Boolean(routeSidebarCompanyId && pluginRoutePath),
   });
   const routeSidebarSlot = useMemo(
     () => resolveRouteSidebarSlot(routeSidebarSlots, pluginRoutePath),
@@ -204,6 +231,7 @@ export function Layout() {
   const keyboardShortcutsEnabled = useQuery({
     queryKey: queryKeys.instance.generalSettings,
     queryFn: () => instanceSettingsApi.getGeneral(),
+    enabled: secondaryQueriesEnabled,
   }).data?.keyboardShortcuts === true;
 
   // A secondary sidebar always collapses the app sidebar to its rail (still
@@ -576,6 +604,7 @@ export function Layout() {
 
   return (
     <GeneralSettingsProvider value={{ keyboardShortcutsEnabled }}>
+      <EditorAutocompleteProvider enabled={editorAutocompleteEnabled}>
       <div
       className={cn(
         "bg-background text-foreground pt-(--sz-safe-top)",
@@ -593,7 +622,11 @@ export function Layout() {
         Skip to Main Content
       </a>
       <WorktreeBanner />
-      <DevRestartBanner devServer={health?.devServer} />
+      {health?.devServer?.enabled ? (
+        <Suspense fallback={null}>
+          <DevRestartBanner devServer={health.devServer} />
+        </Suspense>
+      ) : null}
       <div className={cn("min-h-0 flex-1", isMobile ? "w-full" : "flex overflow-clip")}>
         {isMobile && sidebarOpen && (
           <button
@@ -613,7 +646,9 @@ export function Layout() {
           >
             <div className="flex flex-1 min-h-0 overflow-hidden">
               <div className="w-60 shrink-0 overflow-hidden">
-                {hasSecondarySidebar ? secondarySidebar : <Sidebar />}
+                {hasSecondarySidebar ? secondarySidebar : (
+                  <Sidebar dataEnabled={sidebarDataEnabled} pluginsEnabled={secondaryQueriesEnabled} />
+                )}
               </div>
             </div>
             <SidebarAccountMenu
@@ -634,7 +669,7 @@ export function Layout() {
             onPanelBlurCapture={collapsed ? handlePanelBlur : undefined}
           >
             <div className="flex flex-1 min-h-0">
-              <Sidebar />
+              <Sidebar dataEnabled={sidebarDataEnabled} pluginsEnabled={secondaryQueriesEnabled} />
             </div>
             <SidebarAccountMenu
               deploymentMode={health?.deploymentMode}
@@ -655,7 +690,7 @@ export function Layout() {
             )}
           >
             <StandaloneBrowserControls mobile={isMobile} />
-            <BreadcrumbBar />
+            <BreadcrumbBar pluginsEnabled={secondaryQueriesEnabled} />
             {isMobile && isCompanySettingsRoute ? (
               <div className="border-b border-border px-4 pb-3">
                 <CompanySettingsNav />
@@ -702,19 +737,34 @@ export function Layout() {
                 </RouteErrorBoundary>
               )}
             </main>
-            <PropertiesPanel />
+            {panelContent ? (
+              <Suspense fallback={null}>
+                <PropertiesPanel />
+              </Suspense>
+            ) : null}
           </div>
         </div>
       </div>
       {isMobile && <MobileBottomNav visible={mobileNavVisible} />}
-      <CommandPalette />
-      <NewIssueDialog />
-      <NewProjectDialog />
-      <NewGoalDialog />
-      <NewAgentDialog />
-      <KeyboardShortcutsCheatsheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+      {secondaryQueriesEnabled ? (
+        <Suspense fallback={null}>
+          <CommandPalette />
+        </Suspense>
+      ) : null}
+      <Suspense fallback={null}>
+        {newIssueOpen ? <NewIssueDialog /> : null}
+        {newProjectOpen ? <NewProjectDialog /> : null}
+        {newGoalOpen ? <NewGoalDialog /> : null}
+        {newAgentOpen ? <NewAgentDialog /> : null}
+      </Suspense>
+      {shortcutsOpen ? (
+        <Suspense fallback={null}>
+          <KeyboardShortcutsCheatsheet open onOpenChange={setShortcutsOpen} />
+        </Suspense>
+      ) : null}
       <ToastViewport />
       </div>
+      </EditorAutocompleteProvider>
     </GeneralSettingsProvider>
   );
 }

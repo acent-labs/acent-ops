@@ -52,7 +52,7 @@ export function NewAgentDialog() {
   const [agentMessage, setAgentMessage] = useState("");
   const [latestAgentPrompt, setLatestAgentPrompt] = useState<string | null>(null);
   const [latestAgentPromptCopied, setLatestAgentPromptCopied] = useState(false);
-  const disabledTypes = useDisabledAdaptersSync();
+  const disabledTypes = useDisabledAdaptersSync({ enabled: newAgentOpen });
 
   function resetDialogState() {
     setMode("choices");
@@ -73,6 +73,7 @@ export function NewAgentDialog() {
   const { data: serverAdapters } = useQuery({
     queryKey: queryKeys.adapters.all,
     queryFn: () => adaptersApi.list(),
+    enabled: newAgentOpen,
     staleTime: 5 * 60 * 1000,
   });
 

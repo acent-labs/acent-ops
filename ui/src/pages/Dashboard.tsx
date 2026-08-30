@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "@/lib/router";
 import {
   onboardingStepForCompany,
@@ -29,17 +29,26 @@ import { timeAgo } from "../lib/timeAgo";
 import { cn, formatCents } from "../lib/utils";
 import { SHOW_TASK_PRIORITY_UI } from "../lib/ui-flags";
 import { Bot, CircleDot, DollarSign, ShieldCheck, LayoutDashboard, PauseCircle } from "lucide-react";
-import { ActiveAgentsPanel } from "../components/ActiveAgentsPanel";
-import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart } from "../components/ActivityCharts";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { InlineBanner } from "../components/InlineBanner";
 import type { Agent, Issue } from "@paperclipai/shared";
 import { PluginSlotOutlet } from "@/plugins/slots";
-import { SmokeLabDashboardCard } from "../components/SmokeLabDashboardCard";
 
 const DASHBOARD_ACTIVITY_LIMIT = 10;
+
+const ActiveAgentsPanel = lazy(() =>
+  import("../components/ActiveAgentsPanel").then((module) => ({ default: module.ActiveAgentsPanel })),
+);
+const ChartCard = lazy(() => import("../components/ActivityCharts").then((module) => ({ default: module.ChartCard })));
+const RunActivityChart = lazy(() => import("../components/ActivityCharts").then((module) => ({ default: module.RunActivityChart })));
+const PriorityChart = lazy(() => import("../components/ActivityCharts").then((module) => ({ default: module.PriorityChart })));
+const IssueStatusChart = lazy(() => import("../components/ActivityCharts").then((module) => ({ default: module.IssueStatusChart })));
+const SuccessRateChart = lazy(() => import("../components/ActivityCharts").then((module) => ({ default: module.SuccessRateChart })));
+const SmokeLabDashboardCard = lazy(() =>
+  import("../components/SmokeLabDashboardCard").then((module) => ({ default: module.SmokeLabDashboardCard })),
+);
 
 function getRecentIssues(issues: Issue[]): Issue[] {
   return [...issues]
@@ -76,14 +85,29 @@ export function Dashboard() {
   const location = useLocation();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [animatedActivityIds, setAnimatedActivityIds] = useState<Set<string>>(new Set());
+  const [loadPhase, setLoadPhase] = useState(0);
   const seenActivityIdsRef = useRef<Set<string>>(new Set());
   const hydratedActivityRef = useRef(false);
   const activityAnimationTimersRef = useRef<number[]>([]);
 
+  // Metrics are the usable first screen. Active-run chrome and below-fold
+  // history follow in the same staggered waves as Layout's sidebar data.
+  useEffect(() => {
+    setLoadPhase(0);
+    const activeAgentsTimer = window.setTimeout(() => setLoadPhase(1), 4_000);
+    const secondaryDataTimer = window.setTimeout(() => setLoadPhase(2), 8_000);
+    return () => {
+      window.clearTimeout(activeAgentsTimer);
+      window.clearTimeout(secondaryDataTimer);
+    };
+  }, [selectedCompanyId]);
+  const activeAgentsEnabled = loadPhase >= 1;
+  const secondaryDataEnabled = loadPhase >= 2;
+
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
     queryFn: () => agentsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
+    enabled: !!selectedCompanyId && activeAgentsEnabled,
   });
 
   // Bulk resume for agents parked by a company import. Sequential on purpose
@@ -161,11 +185,23 @@ export function Dashboard() {
     queryKey: dashboardQueryKey,
     enabled: !!selectedCompanyId,
   });
-  const { data, isLoading, error, dataUpdatedAt: dashboardUpdatedAt } = useQuery({
+  const initialDashboardQuery = useQuery({
     queryKey: dashboardQueryKey,
-    queryFn: () => dashboardApi.summary(selectedCompanyId!),
+    queryFn: () => dashboardApi.summary(selectedCompanyId!, { initial: true }),
     enabled: !!selectedCompanyId,
   });
+  const fullDashboardQuery = useQuery({
+    queryKey: [...dashboardQueryKey, "full"],
+    queryFn: () => dashboardApi.summary(selectedCompanyId!),
+    enabled: !!selectedCompanyId && secondaryDataEnabled,
+  });
+  const data = fullDashboardQuery.data ?? initialDashboardQuery.data;
+  const isLoading = initialDashboardQuery.isLoading;
+  const error = initialDashboardQuery.error;
+  const dashboardUpdatedAt = Math.max(
+    initialDashboardQuery.dataUpdatedAt,
+    fullDashboardQuery.dataUpdatedAt,
+  );
   usePublishSharedQueryData(sharedDashboard, data, dashboardUpdatedAt);
 
   const activityQueryKey = [...queryKeys.activity(selectedCompanyId!), { limit: DASHBOARD_ACTIVITY_LIMIT }] as const;
@@ -178,26 +214,26 @@ export function Dashboard() {
   const { data: activity, dataUpdatedAt: activityUpdatedAt } = useQuery({
     queryKey: activityQueryKey,
     queryFn: () => activityApi.list(selectedCompanyId!, { limit: DASHBOARD_ACTIVITY_LIMIT }),
-    enabled: !!selectedCompanyId,
+    enabled: !!selectedCompanyId && secondaryDataEnabled,
   });
   usePublishSharedQueryData(sharedActivity, activity, activityUpdatedAt);
 
   const { data: issues } = useQuery({
     queryKey: queryKeys.issues.list(selectedCompanyId!),
     queryFn: () => issuesApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
+    enabled: !!selectedCompanyId && secondaryDataEnabled,
   });
 
   const { data: projects } = useQuery({
     queryKey: queryKeys.projects.list(selectedCompanyId!, { includeArchived: true }),
     queryFn: () => projectsApi.list(selectedCompanyId!, { includeArchived: true }),
-    enabled: !!selectedCompanyId,
+    enabled: !!selectedCompanyId && secondaryDataEnabled,
   });
 
   const { data: companyMembers } = useQuery({
     queryKey: queryKeys.access.companyUserDirectory(selectedCompanyId!),
     queryFn: () => accessApi.listUserDirectory(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
+    enabled: !!selectedCompanyId && secondaryDataEnabled,
   });
 
   const userProfileMap = useMemo(
@@ -367,7 +403,11 @@ export function Dashboard() {
         </div>
       )}
 
-      <ActiveAgentsPanel companyId={selectedCompanyId!} />
+      {activeAgentsEnabled ? (
+        <Suspense fallback={null}>
+          <ActiveAgentsPanel companyId={selectedCompanyId!} cardLimit={3} />
+        </Suspense>
+      ) : null}
 
       {data && (
         <>
@@ -444,9 +484,11 @@ export function Dashboard() {
             />
           </div>
 
-          <SmokeLabDashboardCard companyId={selectedCompanyId!} />
+          {secondaryDataEnabled ? (
+            <Suspense fallback={null}>
+              <SmokeLabDashboardCard companyId={selectedCompanyId!} />
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <ChartCard title="Run Activity" subtitle="Last 14 days">
               <RunActivityChart activity={data.runActivity} />
             </ChartCard>
@@ -462,17 +504,18 @@ export function Dashboard() {
             <ChartCard title="Success Rate" subtitle="Last 14 days">
               <SuccessRateChart activity={data.runActivity} />
             </ChartCard>
-          </div>
+              </div>
 
-          <PluginSlotOutlet
+              <PluginSlotOutlet
             slotTypes={["dashboardWidget"]}
             context={{ companyId: selectedCompanyId }}
+            enabled={secondaryDataEnabled}
             className="grid gap-4 md:grid-cols-2"
             // design-allow(card-pattern): class-string prop consumed by the plugin outlet; a component can't be passed here (C5a Run 3)
             itemClassName="rounded-lg border bg-card p-4 shadow-sm"
-          />
+              />
 
-          <div className="grid md:grid-cols-2 gap-4">
+              <div className="grid md:grid-cols-2 gap-4">
             {/* Recent Activity */}
             {recentActivity.length > 0 && (
               <div className="min-w-0">
@@ -546,7 +589,9 @@ export function Dashboard() {
                 </Card>
               )}
             </div>
-          </div>
+              </div>
+            </Suspense>
+          ) : null}
 
         </>
       )}

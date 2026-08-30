@@ -26,7 +26,13 @@ function NoBoardAccessPage() {
   );
 }
 
-export function CloudAccessGate() {
+export function CloudAccessGate({
+  hasCompanyAccess = false,
+  optimisticCompanyAccess = false,
+}: {
+  hasCompanyAccess?: boolean;
+  optimisticCompanyAccess?: boolean;
+} = {}) {
   const location = useLocation();
   const queryClient = useQueryClient();
   const healthQuery = useQuery({
@@ -71,14 +77,16 @@ export function CloudAccessGate() {
   });
 
   if (
-    healthQuery.isLoading ||
-    (isAuthenticatedMode && sessionQuery.isLoading) ||
-    (isAuthenticatedMode && !isBootstrapPending && !!sessionQuery.data && boardAccessQuery.isLoading)
+    !optimisticCompanyAccess && (
+      healthQuery.isLoading ||
+      (isAuthenticatedMode && sessionQuery.isLoading) ||
+      (isAuthenticatedMode && !isBootstrapPending && !!sessionQuery.data && !hasCompanyAccess && boardAccessQuery.isLoading)
+    )
   ) {
     return <PaperclipLoading />;
   }
 
-  if (healthQuery.error || boardAccessQuery.error) {
+  if (healthQuery.error || (!hasCompanyAccess && boardAccessQuery.error)) {
     return (
       <div className="mx-auto max-w-xl py-10 text-sm text-destructive">
         {healthQuery.error instanceof Error
@@ -120,6 +128,8 @@ export function CloudAccessGate() {
   if (
     isAuthenticatedMode &&
     sessionQuery.data &&
+    !hasCompanyAccess &&
+    boardAccessQuery.data &&
     !boardAccessQuery.data?.isInstanceAdmin &&
     (boardAccessQuery.data?.companyIds.length ?? 0) === 0
   ) {

@@ -15,6 +15,11 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
+vi.mock("@tanstack/react-query", async () => ({
+  ...(await vi.importActual<typeof import("@tanstack/react-query")>("@tanstack/react-query")),
+  useQueryClient: () => ({ prefetchQuery: vi.fn() }),
+}));
+
 // jsdom's CSS parser rejects the custom-property marker rule stitches inserts
 // (`--sxs{--sxs:N}`), pulled into <App>'s eager import graph transitively via
 // @codesandbox/sandpack-react. Substitute a benign, valid rule on parse failure

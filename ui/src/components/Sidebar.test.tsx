@@ -155,6 +155,7 @@ describe("Sidebar", () => {
     mockSidebarBadgesApi.get.mockResolvedValue({
       inbox: 2,
       decisions: 3,
+      liveRuns: 0,
       approvals: 0,
       failedRuns: 0,
       joinRequests: 0,

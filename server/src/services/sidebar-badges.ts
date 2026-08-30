@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, not } from "drizzle-orm";
+import { and, count, desc, eq, inArray, not } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { agents, approvals, heartbeatRuns } from "@paperclipai/db";
 import type { SidebarBadges } from "@paperclipai/shared";
@@ -67,6 +67,15 @@ export function sidebarBadgeService(db: Db) {
         && !isDismissed(extra?.dismissals ?? new Map(), `run:${row.id}`, row.createdAt),
       ).length;
 
+      const liveRuns = await db
+        .select({ count: count() })
+        .from(heartbeatRuns)
+        .where(and(
+          eq(heartbeatRuns.companyId, companyId),
+          inArray(heartbeatRuns.status, ["queued", "running"]),
+        ))
+        .then((rows) => Number(rows[0]?.count ?? 0));
+
       const joinRequests = (extra?.joinRequests ?? []).filter((row) =>
         !isDismissed(
           extra?.dismissals ?? new Map(),
@@ -78,6 +87,7 @@ export function sidebarBadgeService(db: Db) {
       return {
         inbox: actionableApprovals + failedRuns + joinRequests + unreadTouchedIssues,
         decisions: 0,
+        liveRuns,
         approvals: actionableApprovals,
         failedRuns,
         joinRequests,

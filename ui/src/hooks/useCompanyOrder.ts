@@ -38,9 +38,10 @@ function buildOrderIds(companies: Company[], orderedIds: string[]) {
 type UseCompanyOrderParams = {
   companies: Company[];
   userId: string | null | undefined;
+  enabled?: boolean;
 };
 
-export function useCompanyOrder({ companies, userId }: UseCompanyOrderParams) {
+export function useCompanyOrder({ companies, userId, enabled = true }: UseCompanyOrderParams) {
   const queryClient = useQueryClient();
   const queryKey = useMemo(
     () => queryKeys.sidebarPreferences.companyOrder(userId ?? "__anon__"),
@@ -50,7 +51,7 @@ export function useCompanyOrder({ companies, userId }: UseCompanyOrderParams) {
   const { data } = useQuery({
     queryKey,
     queryFn: () => sidebarPreferencesApi.getCompanyOrder(),
-    enabled: Boolean(userId),
+    enabled: enabled && Boolean(userId),
   });
 
   const [orderedIds, setOrderedIds] = useState<string[]>(() => buildOrderIds(companies, []));

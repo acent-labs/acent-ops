@@ -38,21 +38,21 @@ const EditorAutocompleteContext = createContext<EditorAutocompleteContextValue>(
   slashCommands: [],
 });
 
-export function EditorAutocompleteProvider({ children }: { children: ReactNode }) {
+export function EditorAutocompleteProvider({ children, enabled = true }: { children: ReactNode; enabled?: boolean }) {
   const { selectedCompanyId } = useCompany();
   const { data: companySkills = [] } = useQuery({
     queryKey: selectedCompanyId
       ? queryKeys.companySkills.list(selectedCompanyId)
       : ["company-skills", "__none__"],
     queryFn: () => companySkillsApi.list(selectedCompanyId!),
-    enabled: Boolean(selectedCompanyId),
+    enabled: Boolean(selectedCompanyId) && enabled,
   });
   const { data: routines = [] } = useQuery({
     queryKey: selectedCompanyId
       ? queryKeys.routines.list(selectedCompanyId)
       : ["routines", "__none__", "__all-projects__"],
     queryFn: () => routinesApi.list(selectedCompanyId!),
-    enabled: Boolean(selectedCompanyId),
+    enabled: Boolean(selectedCompanyId) && enabled,
   });
 
   const value = useMemo<EditorAutocompleteContextValue>(() => ({

@@ -1,11 +1,11 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect, type ComponentType } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { ToolConnectionCredentialSource } from "@paperclipai/shared";
 import { Navigate, Outlet, Route, Routes, useActiveCompanyPrefix, useLocation, useParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/i18n";
 import { Layout } from "./components/Layout";
 import { ConferenceRoomChatGate } from "./components/ConferenceRoomChatGate";
-import { TaskChatLab } from "./pages/TaskChatLab";
 import { PipelinesExperimentalGate } from "./components/PipelinesExperimentalGate";
 import { CasesExperimentalGate } from "./components/CasesExperimentalGate";
 import { StatusCardsExperimentalGate } from "./components/StatusCardsExperimentalGate";
@@ -14,80 +14,22 @@ import { CloudManagedPageGate } from "./components/CloudManagedPageGate";
 import { HiddenSettingsPageGate } from "./components/HiddenSettingsPageGate";
 import { IsolatedWorkspacesRouteGate } from "./components/IsolatedWorkspacesRouteGate";
 import { useHiddenSettings } from "./hooks/useHiddenSettings";
-import { Cases } from "./pages/Cases";
-import { CaseDetail } from "./pages/CaseDetail";
 import { OnboardingWizardVariant } from "./components/OnboardingWizardVariant";
 import { CloudAccessGate } from "./components/CloudAccessGate";
 import { PaperclipLoading } from "./components/AnimatedPaperclipIcon";
 import { Dashboard } from "./pages/Dashboard";
-import { DashboardLive } from "./pages/DashboardLive";
-import { Timeline } from "./pages/Timeline";
 import { Companies } from "./pages/Companies";
 import { AGENT_FILTER_TABS, Agents } from "./pages/Agents";
-import { AgentDetail } from "./pages/AgentDetail";
 import { Projects } from "./pages/Projects";
-import { ProjectDetail } from "./pages/ProjectDetail";
-import { ProjectWorkspaceDetail } from "./pages/ProjectWorkspaceDetail";
-import { Workspaces } from "./pages/Workspaces";
 import { Issues } from "./pages/Issues";
-import { Search } from "./pages/Search";
-import { IssueDetail } from "./pages/IssueDetail";
-import { IssueChatLongThreadPerf } from "./pages/IssueChatLongThreadPerf";
-import { Routines } from "./pages/Routines";
-import { Learnings, PipelineItemDetail, PipelineItemLegacyRedirect, Pipelines, ReviewQueue } from "./pages/Pipelines";
-import { PipelineSettings } from "./pages/PipelineSettings";
-import { StatusCards } from "./pages/StatusCards";
-import { RoutineDetail } from "./pages/RoutineDetail";
-import { UserProfile } from "./pages/UserProfile";
-import { ExecutionWorkspaceDetail } from "./pages/ExecutionWorkspaceDetail";
 import { Goals } from "./pages/Goals";
-import { Artifacts } from "./pages/Artifacts";
-import { GoalDetail } from "./pages/GoalDetail";
 import { Approvals } from "./pages/Approvals";
 import { ApprovalDetail } from "./pages/ApprovalDetail";
-import { Costs } from "./pages/Costs";
 import { CompanyActivity } from "./pages/audit/CompanyActivity";
-import { Inbox } from "./pages/Inbox";
-import { WhatNeedsMe } from "./pages/WhatNeedsMe";
-import { DecisionQueuePage } from "./pages/DecisionQueuePage";
-import { BoardChat } from "./pages/BoardChat";
-import { CompanySettings } from "./pages/CompanySettings";
-import { CompanyEnvironments } from "./pages/CompanyEnvironments";
-import { BootstrapSetupUxLab } from "./pages/BootstrapSetupUxLab";
-import { ResponsibleUserDenialUxLab } from "./pages/ResponsibleUserDenialUxLab";
-import { CrossIssueCollaborationUxLab } from "./pages/CrossIssueCollaborationUxLab";
-import { CompanySettingsPluginPage } from "./pages/CompanySettingsPluginPage";
-import { CompanyAccess, CompanyAccessLegacyRoute } from "./pages/CompanyAccess";
-import { AdvancedToolsRoute } from "./pages/tools/AdvancedToolsRoute";
-import { ProfileWizardRoute } from "./pages/tools/profiles/ProfileWizardRoute";
-import { ProfileDetailRoute } from "./pages/tools/profiles/ProfileDetailRoute";
-import { Connections } from "./pages/apps/Connections";
-import { Browse } from "./pages/apps/Browse";
-import { AppsConnect } from "./pages/apps/AppsConnect";
 import { canEnterAppsConnect } from "./pages/apps/app-connect-policy";
-import { AppsReview } from "./pages/apps/AppsReview";
-import { AppDetail } from "./pages/apps/AppDetail";
-import { AppNotConnected } from "./pages/apps/AppNotConnected";
-import { GatewaysList } from "./pages/apps/gateways/GatewaysList";
-import { GatewayDetail } from "./pages/apps/gateways/GatewayDetail";
-import { CompanySkills } from "./pages/CompanySkills";
-import { SkillStudio } from "./pages/SkillStudio";
-import { Secrets } from "./pages/Secrets";
-import { CompanyImport } from "./pages/CompanyImport";
-import { DesignGuide } from "./pages/DesignGuide";
-import { InstanceExperimentalSettings } from "./pages/InstanceExperimentalSettings";
-import { InstanceAccess } from "./pages/InstanceAccess";
-import { ProfileSettings } from "./pages/ProfileSettings";
-import { PluginManager } from "./pages/PluginManager";
-import { PluginSettings } from "./pages/PluginSettings";
-import { AdapterManager } from "./pages/AdapterManager";
-import { PluginPage } from "./pages/PluginPage";
-import { OrgChart } from "./pages/OrgChart";
-import { NewAgent } from "./pages/NewAgent";
 import { AuthPage } from "./pages/Auth";
 import { BoardClaimPage } from "./pages/BoardClaim";
 import { CliAuthPage } from "./pages/CliAuth";
-import { InviteLandingPage } from "./pages/InviteLanding";
 import { JoinRequestQueue } from "./pages/JoinRequestQueue";
 import { NotFoundPage } from "./pages/NotFound";
 import { useCompany } from "./context/CompanyContext";
@@ -102,10 +44,132 @@ import { filterHiddenInstanceSettingsPath, normalizeRememberedInstanceSettingsPa
 import { useCloudInstance } from "./hooks/useCloudInstance";
 import { cloudStackCreateUrl } from "./lib/cloudLinks";
 import { navigateTopLevel } from "@/lib/browserNavigation";
+import { companySkillsApi } from "./api/companySkills";
+import { dashboardApi } from "./api/dashboard";
+import { queryKeys } from "./lib/queryKeys";
+import { CompanySkillsRoute as CompanySkills } from "./pages/CompanySkillsRoute";
 
-const CompanyExport = lazy(() =>
-  import("./pages/CompanyExport").then((module) => ({ default: module.CompanyExport })),
+function lazyNamed<TModule, TName extends keyof TModule>(
+  load: () => Promise<TModule>,
+  name: TName,
+) {
+  return lazy(async () => ({ default: (await load())[name] as ComponentType<any> }));
+}
+
+function BoardAccessGate() {
+  const location = useLocation();
+  const { companies } = useCompany();
+  const companyPrefix = location.pathname.split("/").filter(Boolean)[0]?.toUpperCase();
+  const hasCompanyAccess = companies.some(
+    (company) => company.issuePrefix.toUpperCase() === companyPrefix,
+  );
+  const optimisticCompanyAccess = Boolean(window.localStorage.getItem("paperclip.selectedCompanyId"))
+    && /^\/[^/]+\/(?:dashboard|skills)(?:\/|$)/.test(location.pathname);
+  return (
+    <CloudAccessGate
+      hasCompanyAccess={hasCompanyAccess}
+      optimisticCompanyAccess={optimisticCompanyAccess}
+    />
+  );
+}
+
+const TaskChatLab = lazyNamed(() => import("./pages/TaskChatLab"), "TaskChatLab");
+const Timeline = lazyNamed(() => import("./pages/Timeline"), "Timeline");
+const Search = lazyNamed(() => import("./pages/Search"), "Search");
+const UserProfile = lazyNamed(() => import("./pages/UserProfile"), "UserProfile");
+const Artifacts = lazyNamed(() => import("./pages/Artifacts"), "Artifacts");
+const Costs = lazyNamed(() => import("./pages/Costs"), "Costs");
+const Inbox = lazyNamed(() => import("./pages/Inbox"), "Inbox");
+const WhatNeedsMe = lazyNamed(() => import("./pages/WhatNeedsMe"), "WhatNeedsMe");
+const DecisionQueuePage = lazyNamed(() => import("./pages/DecisionQueuePage"), "DecisionQueuePage");
+const OrgChart = lazyNamed(() => import("./pages/OrgChart"), "OrgChart");
+const InviteLandingPage = lazyNamed(() => import("./pages/InviteLanding"), "InviteLandingPage");
+const AgentDetail = lazyNamed(() => import("./pages/AgentDetail"), "AgentDetail");
+const ProjectDetail = lazyNamed(() => import("./pages/ProjectDetail"), "ProjectDetail");
+const GoalDetail = lazyNamed(() => import("./pages/GoalDetail"), "GoalDetail");
+const Routines = lazyNamed(() => import("./pages/Routines"), "Routines");
+const RoutineDetail = lazyNamed(() => import("./pages/RoutineDetail"), "RoutineDetail");
+const NewAgent = lazyNamed(() => import("./pages/NewAgent"), "NewAgent");
+const DashboardLive = lazyNamed(() => import("./pages/DashboardLive"), "DashboardLive");
+const Cases = lazyNamed(() => import("./pages/Cases"), "Cases");
+const CaseDetail = lazyNamed(() => import("./pages/CaseDetail"), "CaseDetail");
+const ProjectWorkspaceDetail = lazyNamed(
+  () => import("./pages/ProjectWorkspaceDetail"),
+  "ProjectWorkspaceDetail",
 );
+const Workspaces = lazyNamed(() => import("./pages/Workspaces"), "Workspaces");
+const ExecutionWorkspaceDetail = lazyNamed(
+  () => import("./pages/ExecutionWorkspaceDetail"),
+  "ExecutionWorkspaceDetail",
+);
+const Learnings = lazyNamed(() => import("./pages/Pipelines"), "Learnings");
+const PipelineItemDetail = lazyNamed(() => import("./pages/Pipelines"), "PipelineItemDetail");
+const PipelineItemLegacyRedirect = lazyNamed(
+  () => import("./pages/Pipelines"),
+  "PipelineItemLegacyRedirect",
+);
+const Pipelines = lazyNamed(() => import("./pages/Pipelines"), "Pipelines");
+const ReviewQueue = lazyNamed(() => import("./pages/Pipelines"), "ReviewQueue");
+const PipelineSettings = lazyNamed(() => import("./pages/PipelineSettings"), "PipelineSettings");
+const StatusCards = lazyNamed(() => import("./pages/StatusCards"), "StatusCards");
+const BoardChat = lazyNamed(() => import("./pages/BoardChat"), "BoardChat");
+const IssueDetail = lazyNamed(() => import("./pages/IssueDetail"), "IssueDetail");
+const IssueChatLongThreadPerf = lazyNamed(
+  () => import("./pages/IssueChatLongThreadPerf"),
+  "IssueChatLongThreadPerf",
+);
+const CompanySettings = lazyNamed(() => import("./pages/CompanySettings"), "CompanySettings");
+const CompanyEnvironments = lazyNamed(() => import("./pages/CompanyEnvironments"), "CompanyEnvironments");
+const BootstrapSetupUxLab = lazyNamed(() => import("./pages/BootstrapSetupUxLab"), "BootstrapSetupUxLab");
+const ResponsibleUserDenialUxLab = lazyNamed(
+  () => import("./pages/ResponsibleUserDenialUxLab"),
+  "ResponsibleUserDenialUxLab",
+);
+const CrossIssueCollaborationUxLab = lazyNamed(
+  () => import("./pages/CrossIssueCollaborationUxLab"),
+  "CrossIssueCollaborationUxLab",
+);
+const CompanySettingsPluginPage = lazyNamed(
+  () => import("./pages/CompanySettingsPluginPage"),
+  "CompanySettingsPluginPage",
+);
+const CompanyAccess = lazyNamed(() => import("./pages/CompanyAccess"), "CompanyAccess");
+const CompanyAccessLegacyRoute = lazyNamed(
+  () => import("./pages/CompanyAccess"),
+  "CompanyAccessLegacyRoute",
+);
+const AdvancedToolsRoute = lazyNamed(() => import("./pages/tools/AdvancedToolsRoute"), "AdvancedToolsRoute");
+const ProfileWizardRoute = lazyNamed(
+  () => import("./pages/tools/profiles/ProfileWizardRoute"),
+  "ProfileWizardRoute",
+);
+const ProfileDetailRoute = lazyNamed(
+  () => import("./pages/tools/profiles/ProfileDetailRoute"),
+  "ProfileDetailRoute",
+);
+const Connections = lazyNamed(() => import("./pages/apps/Connections"), "Connections");
+const Browse = lazyNamed(() => import("./pages/apps/Browse"), "Browse");
+const AppsConnect = lazyNamed(() => import("./pages/apps/AppsConnect"), "AppsConnect");
+const AppsReview = lazyNamed(() => import("./pages/apps/AppsReview"), "AppsReview");
+const AppDetail = lazyNamed(() => import("./pages/apps/AppDetail"), "AppDetail");
+const AppNotConnected = lazyNamed(() => import("./pages/apps/AppNotConnected"), "AppNotConnected");
+const GatewaysList = lazyNamed(() => import("./pages/apps/gateways/GatewaysList"), "GatewaysList");
+const GatewayDetail = lazyNamed(() => import("./pages/apps/gateways/GatewayDetail"), "GatewayDetail");
+const SkillStudio = lazyNamed(() => import("./pages/SkillStudio"), "SkillStudio");
+const Secrets = lazyNamed(() => import("./pages/Secrets"), "Secrets");
+const CompanyImport = lazyNamed(() => import("./pages/CompanyImport"), "CompanyImport");
+const CompanyExport = lazyNamed(() => import("./pages/CompanyExport"), "CompanyExport");
+const DesignGuide = lazyNamed(() => import("./pages/DesignGuide"), "DesignGuide");
+const InstanceExperimentalSettings = lazyNamed(
+  () => import("./pages/InstanceExperimentalSettings"),
+  "InstanceExperimentalSettings",
+);
+const InstanceAccess = lazyNamed(() => import("./pages/InstanceAccess"), "InstanceAccess");
+const ProfileSettings = lazyNamed(() => import("./pages/ProfileSettings"), "ProfileSettings");
+const PluginManager = lazyNamed(() => import("./pages/PluginManager"), "PluginManager");
+const PluginSettings = lazyNamed(() => import("./pages/PluginSettings"), "PluginSettings");
+const AdapterManager = lazyNamed(() => import("./pages/AdapterManager"), "AdapterManager");
+const PluginPage = lazyNamed(() => import("./pages/PluginPage"), "PluginPage");
 
 function boardRoutes() {
   return (
@@ -644,9 +708,39 @@ function NoCompaniesStartPage() {
 }
 
 export function App() {
+  const location = useLocation();
+  const queryClient = useQueryClient();
+  const { selectedCompanyId } = useCompany();
+  const prefetchCompanyId = selectedCompanyId ?? window.localStorage.getItem("paperclip.selectedCompanyId");
+  useEffect(() => {
+    const skillsRoute = /^(?:\/[^/]+)?\/skills(?:\/|$)/.test(location.pathname);
+    const dashboardRoute = /^\/[^/]+\/dashboard\/?$/.test(location.pathname);
+    if (prefetchCompanyId) {
+      if (skillsRoute) {
+        void Promise.all([
+          queryClient.prefetchQuery({
+            queryKey: queryKeys.companySkills.list(prefetchCompanyId),
+            queryFn: () => companySkillsApi.list(prefetchCompanyId),
+          }),
+          queryClient.prefetchQuery({
+            queryKey: queryKeys.companySkills.catalog(),
+            queryFn: () => companySkillsApi.catalogList(),
+          }),
+        ]);
+      }
+      if (dashboardRoute) {
+        void queryClient.prefetchQuery({
+          queryKey: queryKeys.dashboard(prefetchCompanyId),
+          queryFn: () => dashboardApi.summary(prefetchCompanyId, { initial: true }),
+        });
+      }
+    }
+  }, [location.pathname, prefetchCompanyId, queryClient]);
+
   return (
     <>
-      <Routes>
+      <Suspense fallback={<PaperclipLoading />}>
+        <Routes>
         <Route path="auth" element={<AuthPage />} />
         <Route path="board-claim/:token" element={<BoardClaimPage />} />
         <Route path="cli-auth/:id" element={<CliAuthPage />} />
@@ -656,7 +750,7 @@ export function App() {
         <Route path="ux-lab/responsible-user-denial" element={<ResponsibleUserDenialUxLab />} />
         <Route path="ux-lab/cross-issue-collaboration" element={<CrossIssueCollaborationUxLab />} />
 
-        <Route element={<CloudAccessGate />}>
+        <Route element={<BoardAccessGate />}>
           <Route index element={<CompanyRootRedirect />} />
           <Route path="onboarding" element={<OnboardingRoutePage />} />
           <Route path="instance" element={<LegacySettingsRedirect />} />
@@ -720,7 +814,8 @@ export function App() {
           </Route>
           <Route path="*" element={<NotFoundPage scope="global" />} />
         </Route>
-      </Routes>
+        </Routes>
+      </Suspense>
       <OnboardingWizardVariant />
     </>
   );

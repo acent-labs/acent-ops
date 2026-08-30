@@ -34,11 +34,9 @@ import { SidebarStarredProjects } from "./SidebarStarredProjects";
 import { useDialogActions } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
-import { heartbeatsApi } from "../api/heartbeats";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { sidebarBadgesApi } from "../api/sidebarBadges";
 import { queryKeys } from "../lib/queryKeys";
-import { usePublishSharedQueryData, useSharedPollingQuery } from "../hooks/useSharedPolling";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "../lib/utils";
@@ -46,7 +44,10 @@ import { PluginSlotOutlet } from "@/plugins/slots";
 import { PluginLauncherOutlet } from "@/plugins/launchers";
 import { SidebarCompanyMenu } from "./SidebarCompanyMenu";
 
-export function Sidebar() {
+export function Sidebar({ dataEnabled = true, pluginsEnabled = true }: {
+  dataEnabled?: boolean;
+  pluginsEnabled?: boolean;
+} = {}) {
   const { openNewIssue } = useDialogActions();
   // Every labeled section is collapsible (session-scoped, default open) —
   // one policy across static nav groups and the data-driven sections.
@@ -58,33 +59,15 @@ export function Sidebar() {
   const { data: sidebarBadges } = useQuery({
     queryKey: queryKeys.sidebarBadges(selectedCompanyId!),
     queryFn: () => sidebarBadgesApi.get(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
+    enabled: !!selectedCompanyId && dataEnabled,
   });
   const inboxBadge = sidebarBadges ?? { inbox: 0, failedRuns: 0 };
   const { data: experimentalSettings } = useQuery({
     queryKey: queryKeys.instance.experimentalSettings,
     queryFn: () => instanceSettingsApi.getExperimental(),
+    enabled: pluginsEnabled,
   });
-  const liveRunsQueryKey = queryKeys.liveRuns(selectedCompanyId!);
-  const sharedLiveRuns = useSharedPollingQuery({
-    companyId: selectedCompanyId,
-    resourceKey: "live-runs",
-    queryKey: liveRunsQueryKey,
-    enabled: !!selectedCompanyId,
-    // Event-sourced via LiveUpdatesProvider (GitHub issue 9627) + reconnect reconcile — no
-    // interval poll needed. Polling here also re-armed React Query's timer on
-    // every live-event cache write, a major source of steady-state churn.
-    refetchInterval: false,
-    leaderOnly: true,
-  });
-  const { data: liveRuns, dataUpdatedAt: liveRunsUpdatedAt } = useQuery({
-    queryKey: liveRunsQueryKey,
-    queryFn: () => heartbeatsApi.liveRunsForCompany(selectedCompanyId!),
-    enabled: sharedLiveRuns.enabled,
-    refetchInterval: sharedLiveRuns.refetchInterval,
-  });
-  usePublishSharedQueryData(sharedLiveRuns, liveRuns, liveRunsUpdatedAt);
-  const liveRunCount = liveRuns?.length ?? 0;
+  const liveRunCount = sidebarBadges?.liveRuns ?? 0;
   const showWorkspacesLink = experimentalSettings?.enableIsolatedWorkspaces === true;
   const showApps = experimentalSettings?.enableApps === true;
   const showPipelines = experimentalSettings?.enablePipelines === true;
@@ -247,12 +230,13 @@ export function Sidebar() {
           {streamlined ? (
             <>
               <SidebarNavItem to="/projects" label="Projects" icon={FolderOpen} />
-              <SidebarStarredProjects />
+              {dataEnabled ? <SidebarStarredProjects /> : null}
             </>
           ) : null}
           <PluginSlotOutlet
             slotTypes={["sidebar"]}
             context={pluginContext}
+            enabled={pluginsEnabled}
             className="flex flex-col gap-0.5"
             itemClassName="text-(length:--text-compact) font-medium"
             missingBehavior="placeholder"
@@ -260,6 +244,7 @@ export function Sidebar() {
           <PluginLauncherOutlet
             placementZones={["sidebar"]}
             context={pluginContext}
+            enabled={pluginsEnabled}
             className="flex flex-col gap-0.5"
             itemClassName="text-(length:--text-compact) font-medium"
           />
@@ -268,7 +253,7 @@ export function Sidebar() {
         {/* Classic mode restores the per-project collapsible below Work. */}
         {streamlined ? null : <SidebarProjects />}
 
-        <SidebarAgents streamlined={streamlined} />
+        {dataEnabled ? <SidebarAgents streamlined={streamlined} settingsEnabled={pluginsEnabled} /> : null}
 
         <SidebarSection label="Organization" collapsible={{ open: companyOpen, onOpenChange: setCompanyOpen }}>
           <SidebarNavItem to="/org" label="Org" icon={Network} />
@@ -283,6 +268,7 @@ export function Sidebar() {
         <PluginSlotOutlet
           slotTypes={["sidebarPanel"]}
           context={pluginContext}
+          enabled={pluginsEnabled}
           className="flex flex-col gap-3"
           itemClassName="rounded-lg border border-border p-3"
           missingBehavior="placeholder"

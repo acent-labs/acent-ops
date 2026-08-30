@@ -5,12 +5,15 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OnboardingWizardVariant } from "./OnboardingWizardVariant";
 
-const mockInstanceSettingsApi = vi.hoisted(() => ({
-  getExperimental: vi.fn(),
+let onboardingOpen = false;
+let pathname = "/PAP/dashboard";
+
+vi.mock("@/lib/router", () => ({
+  useLocation: () => ({ pathname }),
 }));
 
-vi.mock("@/api/instanceSettings", () => ({
-  instanceSettingsApi: mockInstanceSettingsApi,
+vi.mock("../context/DialogContext", () => ({
+  useDialogState: () => ({ onboardingOpen }),
 }));
 
 vi.mock("./OnboardingWizard", () => ({
@@ -29,6 +32,8 @@ describe("OnboardingWizardVariant (PAP-138)", () => {
   }
 
   beforeEach(() => {
+    onboardingOpen = false;
+    pathname = "/PAP/dashboard";
     container = document.createElement("div");
     document.body.appendChild(container);
   });
@@ -42,11 +47,18 @@ describe("OnboardingWizardVariant (PAP-138)", () => {
     vi.clearAllMocks();
   });
 
-  it("renders the capsule wizard without reading the chat flag", () => {
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
+  it("does not load the wizard on ordinary routes", () => {
     renderVariant();
 
-    expect(container.querySelector('[data-testid="wizard-capsule"]')).not.toBeNull();
-    expect(mockInstanceSettingsApi.getExperimental).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-testid="wizard-capsule"]')).toBeNull();
+  });
+
+  it("renders the capsule wizard when opened", async () => {
+    onboardingOpen = true;
+    renderVariant();
+
+    await vi.waitFor(() => {
+      expect(container.querySelector('[data-testid="wizard-capsule"]')).not.toBeNull();
+    });
   });
 });

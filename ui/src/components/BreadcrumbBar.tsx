@@ -24,22 +24,30 @@ function CrumbIdentifier({ identifier }: { identifier?: string }) {
   return <span className="shrink-0 font-mono text-muted-foreground">{identifier}</span>;
 }
 
-function GlobalToolbar({ context }: { context: GlobalToolbarContext }) {
-  const { slots } = usePluginSlots({ slotTypes: ["globalToolbarButton"], companyId: context.companyId });
-  const { launchers } = usePluginLaunchers({ placementZones: ["globalToolbarButton"], companyId: context.companyId, enabled: !!context.companyId });
+function GlobalToolbar({ context, enabled }: { context: GlobalToolbarContext; enabled: boolean }) {
+  const { slots } = usePluginSlots({
+    slotTypes: ["globalToolbarButton"],
+    companyId: context.companyId,
+    enabled,
+  });
+  const { launchers } = usePluginLaunchers({
+    placementZones: ["globalToolbarButton"],
+    companyId: context.companyId,
+    enabled: enabled && !!context.companyId,
+  });
   return (
     <div className="ml-auto flex shrink-0 items-center gap-1 pl-2 empty:hidden">
       {slots.length > 0 ? (
-        <PluginSlotOutlet slotTypes={["globalToolbarButton"]} context={context} className="flex items-center gap-1" />
+        <PluginSlotOutlet enabled={enabled} slotTypes={["globalToolbarButton"]} context={context} className="flex items-center gap-1" />
       ) : null}
       {launchers.length > 0 ? (
-        <PluginLauncherOutlet placementZones={["globalToolbarButton"]} context={context} className="flex items-center gap-1" />
+        <PluginLauncherOutlet enabled={enabled} placementZones={["globalToolbarButton"]} context={context} className="flex items-center gap-1" />
       ) : null}
     </div>
   );
 }
 
-export function BreadcrumbBar() {
+export function BreadcrumbBar({ pluginsEnabled = true }: { pluginsEnabled?: boolean } = {}) {
   const { breadcrumbs, mobileToolbar } = useBreadcrumbs();
   const { toggleSidebar, isMobile } = useSidebar();
   const { selectedCompanyId, selectedCompany } = useCompany();
@@ -52,7 +60,7 @@ export function BreadcrumbBar() {
     [selectedCompanyId, selectedCompany?.issuePrefix],
   );
 
-  const globalToolbarSlots = <GlobalToolbar context={globalToolbarSlotContext} />;
+  const globalToolbarSlots = <GlobalToolbar context={globalToolbarSlotContext} enabled={pluginsEnabled} />;
 
   if (isMobile && mobileToolbar) {
     return (

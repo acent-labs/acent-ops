@@ -105,6 +105,7 @@ describe("CompanySettingsSidebar", () => {
     mockSidebarBadgesApi.get.mockResolvedValue({
       inbox: 0,
       decisions: 0,
+      liveRuns: 0,
       approvals: 0,
       failedRuns: 0,
       joinRequests: 2,
@@ -349,6 +350,7 @@ describe("CompanySettingsSidebar operator-hidden entries", () => {
     mockSidebarBadgesApi.get.mockResolvedValue({
       inbox: 0,
       decisions: 0,
+      liveRuns: 0,
       approvals: 0,
       failedRuns: 0,
       joinRequests: 0,

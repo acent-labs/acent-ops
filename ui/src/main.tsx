@@ -12,7 +12,6 @@ import { BreadcrumbProvider } from "./context/BreadcrumbContext";
 import { PanelProvider } from "./context/PanelContext";
 import { SidebarProvider } from "./context/SidebarContext";
 import { DialogProvider } from "./context/DialogContext";
-import { EditorAutocompleteProvider } from "./context/EditorAutocompleteContext";
 import { ToastProvider } from "./context/ToastContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -21,6 +20,9 @@ import { PluginLauncherProvider } from "./plugins/launchers";
 import { startPerfMeasureReaper } from "./lib/perf-measure-reaper";
 import { getOrCreatePaperclipReactRoot } from "./lib/react-root";
 import { startServiceWorkerUpdates } from "./lib/service-worker-updates";
+import { companySkillsApi } from "./api/companySkills";
+import { dashboardApi } from "./api/dashboard";
+import { queryKeys } from "./lib/queryKeys";
 import "@mdxeditor/editor/style.css";
 import "./index.css";
 
@@ -52,6 +54,31 @@ const queryClient = new QueryClient({
   },
 });
 
+const initialCompanyId = window.localStorage.getItem("paperclip.selectedCompanyId");
+if (initialCompanyId && /^(?:\/[^/]+)?\/skills(?:\/|$)/.test(window.location.pathname)) {
+  const bootstrapWindow = window as typeof window & {
+    __paperclipSkillsBootstrap?: Promise<Awaited<ReturnType<typeof companySkillsApi.list>> | null>;
+  };
+  void Promise.all([
+    queryClient.prefetchQuery({
+      queryKey: queryKeys.companySkills.list(initialCompanyId),
+      queryFn: async () =>
+        await bootstrapWindow.__paperclipSkillsBootstrap
+        ?? companySkillsApi.list(initialCompanyId),
+    }),
+    queryClient.prefetchQuery({
+      queryKey: queryKeys.companySkills.catalog(),
+      queryFn: () => companySkillsApi.catalogList(),
+    }),
+  ]);
+}
+if (initialCompanyId && /^\/[^/]+\/dashboard\/?$/.test(window.location.pathname)) {
+  void queryClient.prefetchQuery({
+    queryKey: queryKeys.dashboard(initialCompanyId),
+    queryFn: () => dashboardApi.summary(initialCompanyId, { initial: true }),
+  });
+}
+
 function CompanyAwareBreadcrumbProvider({ children }: { children: React.ReactNode }) {
   const { selectedCompany } = useCompany();
   return <BreadcrumbProvider companyName={selectedCompany?.name ?? null}>{children}</BreadcrumbProvider>;
@@ -68,25 +95,23 @@ getOrCreatePaperclipReactRoot(window, rootElement).render(
         <ThemeProvider>
           <BrowserRouter>
             <CompanyProvider>
-              <EditorAutocompleteProvider>
-                <ToastProvider>
-                  <LiveUpdatesProvider>
-                    <TooltipProvider>
-                      <CompanyAwareBreadcrumbProvider>
-                        <SidebarProvider>
-                          <PanelProvider>
-                            <PluginLauncherProvider>
-                              <DialogProvider>
-                                <App />
-                              </DialogProvider>
-                            </PluginLauncherProvider>
-                          </PanelProvider>
-                        </SidebarProvider>
-                      </CompanyAwareBreadcrumbProvider>
-                    </TooltipProvider>
-                  </LiveUpdatesProvider>
-                </ToastProvider>
-              </EditorAutocompleteProvider>
+              <ToastProvider>
+                <LiveUpdatesProvider>
+                  <TooltipProvider>
+                    <CompanyAwareBreadcrumbProvider>
+                      <SidebarProvider>
+                        <PanelProvider>
+                          <PluginLauncherProvider>
+                            <DialogProvider>
+                              <App />
+                            </DialogProvider>
+                          </PluginLauncherProvider>
+                        </PanelProvider>
+                      </SidebarProvider>
+                    </CompanyAwareBreadcrumbProvider>
+                  </TooltipProvider>
+                </LiveUpdatesProvider>
+              </ToastProvider>
             </CompanyProvider>
           </BrowserRouter>
         </ThemeProvider>

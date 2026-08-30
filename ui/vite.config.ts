@@ -11,6 +11,20 @@ export default defineConfig(({ mode }) => ({
   plugins: [react(), tailwindcss()],
   build: {
     minify: "esbuild",
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            { name: "initial", tags: ["$initial"], priority: 10 },
+            {
+              name: "skills-route",
+              test: /src[\\/]pages[\\/]CompanySkills\.tsx$/,
+              includeDependenciesRecursively: false,
+            },
+          ],
+        },
+      },
+    },
   },
   esbuild:
     mode === "production"

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type SVGProps } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type SVGProps } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "@/lib/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
@@ -31,7 +31,6 @@ import { queryKeys } from "../lib/queryKeys";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { EmptyState } from "../components/EmptyState";
 import { MarkdownBody } from "../components/MarkdownBody";
-import { MarkdownEditor } from "../components/MarkdownEditor";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { CopyText } from "../components/CopyText";
 import { Identity } from "../components/Identity";
@@ -165,6 +164,10 @@ import {
 } from "lucide-react";
 import { GithubIcon } from "../components/icons/github-icon";
 import type { FolderListItem, FolderListResult } from "@paperclipai/shared";
+
+const MarkdownEditor = lazy(() =>
+  import("../components/MarkdownEditor").then((module) => ({ default: module.MarkdownEditor })),
+);
 
 type SkillTreeNode = {
   name: string;
@@ -3090,7 +3093,9 @@ export function SkillDetailPage({
             <div className="text-sm text-muted-foreground">Select a file to inspect.</div>
           ) : editMode && file.editable ? (
             file.markdown ? (
-              <MarkdownEditor value={draft} onChange={setDraft} bordered={false} className="min-h-(--sz-520px)" />
+              <Suspense fallback={<PageSkeleton variant="detail" />}>
+                <MarkdownEditor value={draft} onChange={setDraft} bordered={false} className="min-h-(--sz-520px)" />
+              </Suspense>
             ) : (
               <Textarea
                 value={draft}
@@ -3971,12 +3976,14 @@ function SkillPane({
           <div className="text-sm text-muted-foreground">Select a file to inspect.</div>
         ) : editMode && file.editable ? (
           file.markdown ? (
-            <MarkdownEditor
-              value={draft}
-              onChange={setDraft}
-              bordered={false}
-              className="min-h-(--sz-520px)"
-            />
+            <Suspense fallback={<PageSkeleton variant="detail" />}>
+              <MarkdownEditor
+                value={draft}
+                onChange={setDraft}
+                bordered={false}
+                className="min-h-(--sz-520px)"
+              />
+            </Suspense>
           ) : (
             <Textarea
               value={draft}
@@ -4001,10 +4008,13 @@ export function CompanySkills() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { selectedCompanyId } = useCompany();
+  const { companies, selectedCompanyId: selectedCompanyContextId } = useCompany();
+  const storedCompanyId = window.localStorage.getItem("paperclip.selectedCompanyId");
+  const selectedCompanyId = selectedCompanyContextId
+    ?? companies.find((company) => company.id === storedCompanyId)?.id
+    ?? null;
   const { setBreadcrumbs } = useBreadcrumbs();
   const { pushToast } = useToastActions();
-  const adapterCaps = useAdapterCapabilities();
   const policyDenial = useSkillPolicyDenial();
   // Route a failed skill mutation to the persistent policy banner when it is an
   // explicit-policy (State B) or platform-safety (State C) denial; otherwise keep
@@ -4190,6 +4200,7 @@ export function CompanySkills() {
   // At `/skills` root the discovery grid is shown, so we no longer auto-select
   // the first skill; a skill is only "selected" once it is in the route.
   const selectedSkillId = routeResolution.skill?.id ?? null;
+  const adapterCaps = useAdapterCapabilities({ enabled: Boolean(selectedSkillId) });
 
   const detailQuery = useQuery({
     queryKey: queryKeys.companySkills.detail(selectedCompanyId ?? "", selectedSkillId ?? ""),
@@ -4551,7 +4562,7 @@ export function CompanySkills() {
   const agentsQuery = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId ?? ""),
     queryFn: () => agentsApi.list(selectedCompanyId!),
-    enabled: Boolean(selectedCompanyId),
+    enabled: Boolean(selectedCompanyId && selectedSkillId),
   });
 
   const installedByKey = useMemo(

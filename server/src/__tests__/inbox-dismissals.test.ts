@@ -265,6 +265,7 @@ describeEmbeddedPostgres("inbox dismissals", () => {
     expect(badges).toEqual({
       inbox: 3,
       decisions: 0,
+      liveRuns: 0,
       approvals: 1,
       failedRuns: 1,
       joinRequests: 0,

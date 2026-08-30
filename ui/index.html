@@ -41,6 +41,18 @@
         }
       })();
     </script>
+    <script>
+      (() => {
+        const companyId = window.localStorage.getItem("paperclip.selectedCompanyId");
+        if (!companyId || !/^(?:\/[^/]+)?\/skills(?:\/|$)/.test(window.location.pathname)) return;
+        window.__paperclipSkillsBootstrap = fetch(
+          `/api/companies/${encodeURIComponent(companyId)}/skills`,
+          { credentials: "include" },
+        )
+          .then((response) => response.ok ? response.json() : null)
+          .catch(() => null);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

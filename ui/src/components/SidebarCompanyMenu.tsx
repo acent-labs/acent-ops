@@ -228,6 +228,7 @@ export function SidebarCompanyMenu({ open: controlledOpen, onOpenChange }: Sideb
   const { orderedCompanies, persistOrder } = useCompanyOrder({
     companies: sidebarCompanies,
     userId: currentUserId,
+    enabled: open,
   });
 
   // In Paperclip Cloud the switcher lists the signed-in user's stacks

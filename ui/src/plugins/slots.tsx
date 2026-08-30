@@ -886,6 +886,7 @@ export function PluginSlotMount({
 type PluginSlotOutletProps = {
   slotTypes: PluginUiSlotType[];
   context: PluginSlotContext;
+  enabled?: boolean;
   entityType?: PluginUiSlotEntityType | null;
   className?: string;
   itemClassName?: string;
@@ -896,6 +897,7 @@ type PluginSlotOutletProps = {
 export function PluginSlotOutlet({
   slotTypes,
   context,
+  enabled = true,
   entityType,
   className,
   itemClassName,
@@ -906,6 +908,7 @@ export function PluginSlotOutlet({
     slotTypes,
     entityType,
     companyId: context.companyId,
+    enabled,
   });
 
   if (errorMessage) {

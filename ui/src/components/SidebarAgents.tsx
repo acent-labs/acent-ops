@@ -293,7 +293,13 @@ function SidebarAgentItem({
   );
 }
 
-export function SidebarAgents({ streamlined = false }: { streamlined?: boolean } = {}) {
+export function SidebarAgents({
+  streamlined = false,
+  settingsEnabled = true,
+}: {
+  streamlined?: boolean;
+  settingsEnabled?: boolean;
+} = {}) {
   const [open, setOpen] = useState(true);
   const [pendingAgentIds, setPendingAgentIds] = useState<Set<string>>(() => new Set());
   const [liveLingerVersion, setLiveLingerVersion] = useState(0);
@@ -314,7 +320,7 @@ export function SidebarAgents({ streamlined = false }: { streamlined?: boolean }
   const { data: experimentalSettings } = useQuery({
     queryKey: queryKeys.instance.experimentalSettings,
     queryFn: () => instanceSettingsApi.getExperimental(),
-    enabled: !!selectedCompanyId,
+    enabled: !!selectedCompanyId && settingsEnabled,
   });
   const builtInAgentsEnabled = experimentalSettings?.enableBuiltInAgents === true;
   const { data: builtInAgents } = useQuery({

@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CloudAccessGate } from "./components/CloudAccessGate";
 import appSource from "./App.tsx?raw";
+import companySkillsRouteSource from "./pages/CompanySkillsRoute.tsx?raw";
 
 const mockHealthApi = vi.hoisted(() => ({
   get: vi.fn(),
@@ -146,6 +147,61 @@ describe("CloudAccessGate", () => {
     unmountRoot(root);
   });
 
+  it("does not hold a proven company behind the aggregate access read", async () => {
+    mockAuthApi.getSession.mockResolvedValue({
+      session: { id: "session-1", userId: "user-1" },
+      user: { id: "user-1", email: "user@example.com", name: "User", image: null },
+    });
+    mockAccessApi.getCurrentBoardAccess.mockReturnValue(new Promise(() => {}));
+
+    const root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    flushSync(() => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <CloudAccessGate hasCompanyAccess />
+        </QueryClientProvider>,
+      );
+    });
+    await waitForText(container, "Outlet content");
+
+    expect(container.textContent).toContain("Outlet content");
+    unmountRoot(root);
+  });
+
+  it("allows stored-company bootstrap only while the access read is pending", async () => {
+    mockAuthApi.getSession.mockResolvedValue({
+      session: { id: "session-1", userId: "user-1" },
+      user: { id: "user-1", email: "user@example.com", name: "User", image: null },
+    });
+    let resolveAccess!: (value: unknown) => void;
+    mockAccessApi.getCurrentBoardAccess.mockReturnValue(new Promise((resolve) => {
+      resolveAccess = resolve;
+    }));
+
+    const root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    flushSync(() => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <CloudAccessGate optimisticCompanyAccess />
+        </QueryClientProvider>,
+      );
+    });
+    await waitForText(container, "Outlet content");
+
+    resolveAccess({
+      user: null,
+      userId: "user-1",
+      isInstanceAdmin: false,
+      companyIds: [],
+      source: "session",
+      keyId: null,
+    });
+    await waitForText(container, "No organization access");
+    unmountRoot(root);
+  });
+
   it("shows browser sign-in setup for signed-out private bootstrap-pending instances", async () => {
     mockHealthApi.get.mockResolvedValue({
       status: "ok",
@@ -227,6 +283,42 @@ describe("CloudAccessGate", () => {
     expect(mockAccessApi.claimBootstrapAdmin).not.toHaveBeenCalled();
 
     unmountRoot(root);
+  });
+});
+
+describe("route-level bundles", () => {
+  it("keeps heavy detail, skills, apps, settings, and experiment pages behind lazy imports", () => {
+    for (const page of [
+      "AgentDetail",
+      "ProjectDetail",
+      "GoalDetail",
+      "Routines",
+      "RoutineDetail",
+      "NewAgent",
+      "Timeline",
+      "Search",
+      "UserProfile",
+      "Artifacts",
+      "Costs",
+      "Inbox",
+      "WhatNeedsMe",
+      "DecisionQueuePage",
+      "OrgChart",
+      "IssueDetail",
+      "SkillStudio",
+      "AppDetail",
+      "CompanySettings",
+      "CompanyEnvironments",
+      "Pipelines",
+      "StatusCards",
+      "ExecutionWorkspaceDetail",
+    ]) {
+      expect(appSource).toContain(`import(\"./pages/${page === "AppDetail" ? "apps/" : ""}${page}\")`);
+      expect(appSource).not.toContain(`import { ${page} } from`);
+    }
+    expect(appSource).toContain('import("./pages/InviteLanding")');
+    expect(appSource).not.toContain('import { InviteLandingPage } from');
+    expect(companySkillsRouteSource).toContain('import("./CompanySkills")');
   });
 });
 

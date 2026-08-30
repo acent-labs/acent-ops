@@ -1,4 +1,11 @@
-import { OnboardingWizard } from "./OnboardingWizard";
+import { lazy, Suspense } from "react";
+import { useLocation } from "@/lib/router";
+import { useDialogState } from "../context/DialogContext";
+import { PaperclipLoading } from "./AnimatedPaperclipIcon";
+
+const OnboardingWizard = lazy(() =>
+  import("./OnboardingWizard").then((module) => ({ default: module.OnboardingWizard })),
+);
 
 /**
  * Default onboarding wizard. Conference-room chat is now the only surface left
@@ -6,5 +13,13 @@ import { OnboardingWizard } from "./OnboardingWizard";
  * experimental flag.
  */
 export function OnboardingWizardVariant() {
-  return <OnboardingWizard />;
+  const { onboardingOpen } = useDialogState();
+  const location = useLocation();
+  const routeOpen = /^(?:\/[^/]+)?\/onboarding\/?$/.test(location.pathname);
+  if (!onboardingOpen && !routeOpen) return null;
+  return (
+    <Suspense fallback={<PaperclipLoading />}>
+      <OnboardingWizard />
+    </Suspense>
+  );
 }
