@@ -64,8 +64,8 @@ describe("adapter model listing", () => {
     }));
 
     expect(models).toEqual([
-      { id: "gpt-5.5", label: "gpt-5.5" },
-      { id: "gpt-5.3-codex-spark", label: "gpt-5.3-codex-spark" },
+      { id: "gpt-5.5", label: "GPT-5.5" },
+      { id: "gpt-5.3-codex-spark", label: "GPT-5.3-Codex-Spark" },
     ]);
   });
 
@@ -86,10 +86,9 @@ describe("adapter model listing", () => {
 
     const models = await listAdapterModels("codex_local");
 
-    expect(models).toEqual([
-      { id: "gpt-5.5", label: "gpt-5.5" },
-      { id: "gpt-5.4", label: "gpt-5.4" },
-    ]);
+    expect(models.some((model) => model.id === "gpt-5.5")).toBe(true);
+    expect(models.some((model) => model.id === "gpt-5.4")).toBe(true);
+    expect(models.some((model) => model.id === "codex-mini-latest")).toBe(true);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -206,8 +205,10 @@ describe("adapter model listing", () => {
     const refreshed = await refreshAdapterModels("codex_local");
 
     expect(runner).toHaveBeenCalledTimes(2);
-    expect(initial).toEqual([{ id: "gpt-5.4", label: "gpt-5.4" }]);
-    expect(refreshed).toEqual([{ id: "gpt-5.5", label: "gpt-5.5" }]);
+    expect(initial.some((model) => model.id === "gpt-5.4")).toBe(true);
+    expect(initial.some((model) => model.id === "gpt-5.5")).toBe(true);
+    expect(refreshed.some((model) => model.id === "gpt-5.5")).toBe(true);
+    expect(refreshed.some((model) => model.id === "codex-mini-latest")).toBe(true);
   });
 
   it("falls back to static codex models when Codex CLI and OpenAI model discovery fail", async () => {

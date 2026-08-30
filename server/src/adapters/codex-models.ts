@@ -95,7 +95,8 @@ export function parseCodexDebugModelsOutput(stdout: string): AdapterModel[] {
           : "";
     const id = rawId.trim();
     if (!id) continue;
-    models.push({ id, label: id });
+    const displayName = typeof record.display_name === "string" ? record.display_name.trim() : "";
+    models.push({ id, label: displayName || id });
   }
 
   return dedupeModels(models);
@@ -165,7 +166,7 @@ async function loadCodexModels(options?: { forceRefresh?: boolean }): Promise<Ad
 
   const cliModels = fetchCodexCliModels();
   if (cliModels.length > 0) {
-    const models = dedupeModels(cliModels);
+    const models = mergedWithFallback(cliModels);
     cached = {
       cacheKey,
       expiresAt: now + CODEX_MODELS_CACHE_TTL_MS,

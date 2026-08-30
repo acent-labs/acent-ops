@@ -1,5 +1,24 @@
 export { agentAdapterTypeSchema, optionalAgentAdapterTypeSchema } from "./adapter-type.js";
 export {
+  buildPlaybookEntriesFromSourceDocuments,
+  findForbiddenViolations,
+  retrievePlaybookEntries,
+  runLiveAssistPipeline,
+  type Citation,
+  type FreshdeskTicketContext,
+  type LiveAssistBlockedDraft,
+  type LiveAssistDraft,
+  type LiveAssistDraftModel,
+  type LiveAssistDraftModelInput,
+  type LiveAssistPipelineOptions,
+  type LiveAssistResult,
+  type PlaybookEntry,
+  type PlaybookEntryStatus,
+  type PlaybookPiiClass,
+  type PlaybookSource,
+  type PlaybookSourceDocument,
+} from "./playbook-live-assist.js";
+export {
   COMPANY_STATUSES,
   DEFAULT_COMPANY_ATTACHMENT_MAX_BYTES,
   MAX_COMPANY_ATTACHMENT_MAX_BYTES,
