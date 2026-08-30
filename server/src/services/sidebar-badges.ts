@@ -77,6 +77,7 @@ export function sidebarBadgeService(db: Db) {
       const unreadTouchedIssues = extra?.unreadTouchedIssues ?? 0;
       return {
         inbox: actionableApprovals + failedRuns + joinRequests + unreadTouchedIssues,
+        decisions: 0,
         approvals: actionableApprovals,
         failedRuns,
         joinRequests,

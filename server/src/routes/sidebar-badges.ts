@@ -5,6 +5,7 @@ import { inboxDismissals, joinRequests } from "@paperclipai/db";
 import { sidebarBadgeService } from "../services/sidebar-badges.js";
 import { accessService } from "../services/access.js";
 import { dashboardService } from "../services/dashboard.js";
+import { attentionService } from "../services/attention.js";
 import { collapseDuplicatePendingHumanJoinRequests } from "../lib/join-request-dedupe.js";
 import { assertCompanyAccess } from "./authz.js";
 
@@ -29,6 +30,7 @@ export function sidebarBadgeRoutes(db: Db) {
   const svc = sidebarBadgeService(db);
   const access = accessService(db);
   const dashboard = dashboardService(db);
+  const attention = attentionService(db);
 
   router.get("/companies/:companyId/sidebar-badges", async (req, res) => {
     const companyId = req.params.companyId as string;
@@ -78,16 +80,22 @@ export function sidebarBadgeRoutes(db: Db) {
           .then(buildDismissedAtByKey)
         : new Map<string, number>();
 
-    const badges = await svc.get(companyId, {
-      dismissals: dismissedAtByKey,
-      joinRequests: visibleJoinRequests,
-    });
-    const summary = await dashboard.summary(companyId);
+    const [badges, summary, attentionFeed] = await Promise.all([
+      svc.get(companyId, {
+        dismissals: dismissedAtByKey,
+        joinRequests: visibleJoinRequests,
+      }),
+      dashboard.summary(companyId),
+      req.actor.type === "board" && req.actor.userId
+        ? attention.list(companyId, { userId: req.actor.userId, limit: 1 })
+        : null,
+    ]);
     const hasFailedRuns = badges.failedRuns > 0;
     const alertsCount =
       (summary.agents.error > 0 && !hasFailedRuns ? 1 : 0) +
       (summary.costs.monthBudgetCents > 0 && summary.costs.monthUtilizationPercent >= 80 ? 1 : 0);
     badges.inbox = badges.failedRuns + alertsCount + badges.joinRequests + badges.approvals;
+    badges.decisions = attentionFeed?.deskBadgeCount ?? 0;
 
     res.json(badges);
   });

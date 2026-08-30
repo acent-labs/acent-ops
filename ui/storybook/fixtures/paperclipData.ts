@@ -1256,6 +1256,7 @@ export const storybookEntityTitleMap = new Map<string, string>([
 
 export const storybookSidebarBadges: SidebarBadges = {
   inbox: 7,
+  decisions: 3,
   approvals: 2,
   failedRuns: 1,
   joinRequests: 1,

@@ -149,9 +149,8 @@ export function WhatNeedsMe() {
     isLoading,
     error,
   } = useQuery({
-    // Distinct from the sidebar badge's `queryKeys.attention` so dismissed rows
-    // (needed for the curtains) never inflate the badge count. Invalidating the
-    // `["attention", companyId]` prefix still cascades to this query.
+    // The full feed is mounted only on Decisions routes. Invalidating the
+    // `["attention", companyId]` prefix still cascades to this view.
     queryKey: [
       ...queryKeys.attention(selectedCompanyId!),
       "with-dismissed",

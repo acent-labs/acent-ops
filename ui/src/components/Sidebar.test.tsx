@@ -16,6 +16,10 @@ const mockAttentionApi = vi.hoisted(() => ({
   list: vi.fn(),
 }));
 
+const mockSidebarBadgesApi = vi.hoisted(() => ({
+  get: vi.fn(),
+}));
+
 const mockInstanceSettingsApi = vi.hoisted(() => ({
   getExperimental: vi.fn(),
 }));
@@ -74,12 +78,12 @@ vi.mock("../api/attention", () => ({
   attentionApi: mockAttentionApi,
 }));
 
-vi.mock("../api/instanceSettings", () => ({
-  instanceSettingsApi: mockInstanceSettingsApi,
+vi.mock("../api/sidebarBadges", () => ({
+  sidebarBadgesApi: mockSidebarBadgesApi,
 }));
 
-vi.mock("../hooks/useInboxBadge", () => ({
-  useInboxBadge: () => ({ inbox: 0, failedRuns: 0 }),
+vi.mock("../api/instanceSettings", () => ({
+  instanceSettingsApi: mockInstanceSettingsApi,
 }));
 
 vi.mock("@/plugins/slots", () => ({
@@ -148,6 +152,13 @@ describe("Sidebar", () => {
     document.body.appendChild(container);
     mockHeartbeatsApi.liveRunsForCompany.mockResolvedValue([]);
     mockAttentionApi.list.mockResolvedValue({ items: [] });
+    mockSidebarBadgesApi.get.mockResolvedValue({
+      inbox: 2,
+      decisions: 3,
+      approvals: 0,
+      failedRuns: 0,
+      joinRequests: 0,
+    });
     mockSidebar.isMobile = false;
     mockSidebar.collapsed = false;
     mockSidebar.peeking = false;
@@ -301,11 +312,15 @@ describe("Sidebar", () => {
     });
   });
 
-  it("does not poll attention until Decisions is enabled", async () => {
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableDecisions: false });
+  it("uses aggregate sidebar badges without fetching the attention feed", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableDecisions: true });
     const root = await renderSidebar();
 
+    expect(mockSidebarBadgesApi.get).toHaveBeenCalledWith("company-1");
     expect(mockAttentionApi.list).not.toHaveBeenCalled();
+    const decisionsLink = [...container.querySelectorAll("nav a")]
+      .find((anchor) => anchor.textContent?.includes("Decisions"));
+    expect(decisionsLink?.textContent).toContain("3");
 
     flushSync(() => {
       root.unmount();
@@ -321,7 +336,7 @@ describe("Sidebar", () => {
 
     const primaryNavLinks = [...container.querySelectorAll("nav > div:first-child a")];
     const decisionsLink = primaryNavLinks.find(
-      (anchor) => anchor.textContent?.trim() === "Decisions",
+      (anchor) => anchor.getAttribute("href") === "/decisions",
     );
     const statusLink = primaryNavLinks.find((anchor) => anchor.getAttribute("href") === "/status");
 
