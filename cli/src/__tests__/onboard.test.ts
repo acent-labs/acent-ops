@@ -1,13 +1,20 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { onboard } from "../commands/onboard.js";
 import type { PaperclipConfig } from "../config/schema.js";
+
+const runCommandMock = vi.hoisted(() => vi.fn());
+
+vi.mock("../commands/run.js", () => ({
+  runCommand: runCommandMock,
+}));
 
 const ORIGINAL_ENV = { ...process.env };
 const ORIGINAL_CWD = process.cwd();
 const ORIGINAL_PATH = process.env.PATH;
+const ORIGINAL_EXIT_CODE = process.exitCode;
 
 function createExistingConfigFixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-onboard-"));
@@ -87,18 +94,29 @@ describe("onboard", () => {
     delete process.env.PAPERCLIP_AGENT_JWT_SECRET;
     delete process.env.PAPERCLIP_SECRETS_MASTER_KEY;
     delete process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE;
+    delete process.env.PAPERCLIP_DB_BACKUP_DIR;
+    delete process.env.PAPERCLIP_DB_BACKUP_ENABLED;
+    delete process.env.PAPERCLIP_DB_BACKUP_INTERVAL_MINUTES;
+    delete process.env.PAPERCLIP_DB_BACKUP_RETENTION_DAYS;
+    delete process.env.PAPERCLIP_STORAGE_PROVIDER;
+    delete process.env.PAPERCLIP_STORAGE_LOCAL_DIR;
+    delete process.env.PAPERCLIP_SECRETS_PROVIDER;
+    delete process.env.PAPERCLIP_SECRETS_STRICT_MODE;
     delete process.env.PAPERCLIP_HOME;
     delete process.env.PAPERCLIP_CONFIG;
     delete process.env.PAPERCLIP_INSTANCE_ID;
     delete process.env.PAPERCLIP_BIND;
     delete process.env.PAPERCLIP_BIND_HOST;
     delete process.env.PAPERCLIP_TAILNET_BIND_HOST;
+    delete process.env.PAPERCLIP_OPEN_ON_LISTEN;
     delete process.env.HOST;
+    runCommandMock.mockReset();
   });
 
   afterEach(() => {
     process.env = { ...ORIGINAL_ENV };
     process.chdir(ORIGINAL_CWD);
+    process.exitCode = ORIGINAL_EXIT_CODE;
   });
 
   it("preserves an existing config when rerun without flags", async () => {
@@ -119,6 +137,38 @@ describe("onboard", () => {
     expect(fs.readFileSync(fixture.configPath, "utf8")).toBe(fixture.configText);
     expect(fs.existsSync(`${fixture.configPath}.backup`)).toBe(false);
     expect(fs.existsSync(path.join(path.dirname(fixture.configPath), ".env"))).toBe(true);
+  });
+
+  it("does not opt into opening a browser when --yes starts an existing setup", async () => {
+    const fixture = createExistingConfigFixture();
+
+    await onboard({ config: fixture.configPath, yes: true });
+
+    expect(runCommandMock).toHaveBeenCalledWith({ config: fixture.configPath, repair: true, yes: true });
+    expect(process.env.PAPERCLIP_OPEN_ON_LISTEN).toBeUndefined();
+  });
+
+  it("does not opt into opening a browser when --yes starts a fresh setup", async () => {
+    const configPath = createFreshConfigPath();
+
+    await onboard({ config: configPath, yes: true });
+
+    expect(runCommandMock).toHaveBeenCalledWith({ config: configPath, repair: true, yes: true });
+    expect(process.env.PAPERCLIP_OPEN_ON_LISTEN).toBeUndefined();
+  });
+
+  it("backs up invalid config bytes and refuses --yes replacement", async () => {
+    const configPath = createFreshConfigPath();
+    const invalidBytes = Buffer.from('{"database": invalid}\n', "utf8");
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, invalidBytes);
+
+    await onboard({ config: configPath, yes: true, invokedByRun: true });
+
+    expect(process.exitCode).toBe(1);
+    expect(fs.readFileSync(configPath)).toEqual(invalidBytes);
+    expect(fs.readFileSync(`${configPath}.invalid-1`)).toEqual(invalidBytes);
+    expect(fs.existsSync(`${configPath}.backup`)).toBe(false);
   });
 
   it("keeps --yes onboarding on local trusted loopback defaults", async () => {

@@ -1,4 +1,4 @@
-const CACHE_NAME = "paperclip-v3";
+const CACHE_NAME = "paperclip-v2";
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -33,10 +33,15 @@ self.addEventListener("fetch", (event) => {
         return response;
       })
       .catch(async () => {
+        // caches.match() resolves undefined on a miss (and the promise itself
+        // is always truthy, so `||` can never supply a fallback). respondWith
+        // must always receive a real Response — resolving undefined breaks
+        // the navigation with "Failed to convert value to 'Response'" instead
+        // of showing anything.
         if (request.mode === "navigate") {
-          return (await caches.match("/")) || new Response("Offline", { status: 503 });
+          return (await caches.match("/")) ?? new Response("Offline", { status: 503 });
         }
-        return (await caches.match(request)) || new Response("Offline", { status: 503 });
+        return (await caches.match(request)) ?? Response.error();
       })
   );
 });
