@@ -51,6 +51,7 @@ import {
   backfillPrincipalAccessCompatibility,
   backfillLegacyToolOAuthTokens,
   bootstrapExecutionPolicyFromEnv,
+  companySkillService,
   environmentCustomImageService,
   decisionService,
   decisionRetentionService,
@@ -788,6 +789,15 @@ export async function startServer(): Promise<StartedServer> {
   const decisionServiceOptions = {
     wakeOriginAgent: createDecisionWakeOriginAgent(heartbeat?.wakeup ?? null),
   };
+  const skillInventory = companySkillService(db as any);
+  const skillCompanies = await db.select({ id: companies.id }).from(companies);
+  for (const company of skillCompanies) {
+    try {
+      await skillInventory.reconcileInventory(company.id);
+    } catch (err) {
+      logger.error({ err, companyId: company.id }, "startup company skill inventory reconciliation failed");
+    }
+  }
   // Managed instances drive bundled plugin auto-install from the managed-config
   // document parsed fail-closed above (`plugins.autoInstall`). Absent env means
   // self-hosted: createApp falls back to its built-in kubernetes-only default.

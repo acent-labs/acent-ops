@@ -295,13 +295,13 @@ describeEmbeddedPostgres("companySkillService.list", () => {
   });
 
   it("rejects skill inventory refresh for a missing company", async () => {
-    await expect(svc.list(randomUUID())).rejects.toMatchObject({
+    await expect(svc.reconcileInventory(randomUUID())).rejects.toMatchObject({
       status: 404,
       message: "Company not found",
     });
   });
 
-  it("does not retouch unchanged bundled skills during list refresh", async () => {
+  it("does not retouch unchanged bundled skills during inventory reconciliation", async () => {
     const companyId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
@@ -310,6 +310,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
       requireBoardApprovalForNewAgents: false,
     });
 
+    await svc.reconcileInventory(companyId);
     const initialList = await svc.list(companyId, { sort: "recent" });
     const bundledSkill = initialList.find((skill) => skill.key.startsWith("paperclipai/paperclip/"));
     expect(bundledSkill).toBeDefined();
@@ -328,6 +329,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
       .set({ updatedAt: preservedUpdatedAt })
       .where(eq(companySkills.id, bundledSkill.id));
 
+    await svc.reconcileInventory(companyId);
     const refreshedList = await svc.list(companyId, { sort: "recent" });
     const refreshedSkill = refreshedList.find((skill) => skill.id === bundledSkill.id);
 
@@ -343,8 +345,9 @@ describeEmbeddedPostgres("companySkillService.list", () => {
       requireBoardApprovalForNewAgents: false,
     });
 
+    await svc.reconcileInventory(companyId);
+    await svc.reconcileInventory(companyId);
     const initialList = await svc.list(companyId);
-    await svc.list(companyId);
     const paperclipSkill = initialList.find((skill) => skill.key === "paperclipai/paperclip/paperclip");
     expect(paperclipSkill).toBeDefined();
     if (!paperclipSkill) throw new Error("Expected bundled Paperclip skill");
@@ -401,7 +404,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     expect(materializedHashes).not.toHaveProperty("EDITS.md");
   });
 
-  it("repairs a squatted bundled root during bundled-skill list refresh", async () => {
+  it("repairs a squatted bundled root during inventory reconciliation", async () => {
     const companyId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
@@ -418,6 +421,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
       position: 0,
     }).returning();
 
+    await svc.reconcileInventory(companyId);
     const listed = await svc.list(companyId);
     const folderRows = await db.select().from(folders).where(eq(folders.companyId, companyId));
     const bundledRoot = folderRows.find((folder) => folder.systemKey === "bundled");
@@ -429,7 +433,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     expect(repairedSquat?.slug).toMatch(/^bundled-[a-f0-9]{8}$/);
   });
 
-  it("does not retouch bundled skills with stale missing-source metadata during list refresh", async () => {
+  it("does not retouch bundled skills with stale missing-source metadata during inventory reconciliation", async () => {
     const companyId = randomUUID();
     await db.insert(companies).values({
       id: companyId,
@@ -438,6 +442,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
       requireBoardApprovalForNewAgents: false,
     });
 
+    await svc.reconcileInventory(companyId);
     const initialList = await svc.list(companyId, { sort: "recent" });
     const bundledSkill = initialList.find((skill) => skill.key.startsWith("paperclipai/paperclip/"));
     expect(bundledSkill).toBeDefined();
@@ -462,6 +467,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
       })
       .where(eq(companySkills.id, bundledSkill.id));
 
+    await svc.reconcileInventory(companyId);
     const refreshedList = await svc.list(companyId, { sort: "recent" });
     const refreshedSkill = refreshedList.find((skill) => skill.id === bundledSkill.id);
     const stored = await svc.getById(companyId, bundledSkill.id);
@@ -1423,6 +1429,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
       },
     });
 
+    await svc.reconcileInventory(companyId);
     const listed = await svc.list(companyId);
     const listedSkill = listed.find((skill) => skill.id === skillId);
     const detail = await svc.detail(companyId, skillId);
@@ -1463,7 +1470,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
     });
   });
 
-  it("continues pruning missing local-path skills that no active agent desires", async () => {
+  it("keeps list reads DB-only until reconciliation prunes missing unused skills", async () => {
     const companyId = randomUUID();
     const skillId = randomUUID();
     const missingSkillDir = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-missing-unused-skill-")), "gone");
@@ -1493,7 +1500,9 @@ describeEmbeddedPostgres("companySkillService.list", () => {
 
     const listed = await svc.list(companyId);
 
-    expect(listed.find((skill) => skill.id === skillId)).toBeUndefined();
+    expect(listed.find((skill) => skill.id === skillId)).toBeDefined();
+    await svc.reconcileInventory(companyId);
+    expect((await svc.list(companyId)).find((skill) => skill.id === skillId)).toBeUndefined();
     await expect(svc.getById(companyId, skillId)).resolves.toBeNull();
   });
 
@@ -1528,6 +1537,12 @@ describeEmbeddedPostgres("companySkillService.list", () => {
       metadata: { sourceKind: "local_path" },
     });
 
+    const beforeReconciliation = await svc.list(companyId);
+    expect(beforeReconciliation.find((entry) => entry.id === skillId)?.fileInventory).toEqual([
+      { path: "SKILL.md", kind: "skill" },
+    ]);
+
+    await svc.reconcileInventory(companyId);
     const listed = await svc.list(companyId);
     const skill = listed.find((entry) => entry.id === skillId);
 
@@ -1799,7 +1814,7 @@ describeEmbeddedPostgres("companySkillService.list", () => {
       },
     });
 
-    await svc.list(companyId);
+    await svc.reconcileInventory(companyId);
     const stored = await svc.getById(companyId, skillId);
 
     expect(stored?.metadata).toEqual({ sourceKind: "local_path" });

@@ -3175,7 +3175,6 @@ export function companySkillService(db: Db) {
   }
 
   async function list(companyId: string, query: CompanySkillListQuery = {}): Promise<CompanySkillListItem[]> {
-    await ensureSkillInventoryCurrent(companyId);
     const [dbRows, folderListing] = await Promise.all([db
       .select({
         id: companySkills.id,
@@ -3280,7 +3279,6 @@ export function companySkillService(db: Db) {
   }
 
   async function listFull(companyId: string): Promise<CompanySkill[]> {
-    await ensureSkillInventoryCurrent(companyId);
     const rows = await db
       .select(selectCompanySkillColumns())
       .from(companySkills)
@@ -3485,7 +3483,6 @@ export function companySkillService(db: Db) {
   }
 
   async function detail(companyId: string, id: string, actor?: SkillActor | null): Promise<CompanySkillDetail | null> {
-    await ensureSkillInventoryCurrent(companyId);
     const skill = await getByRouteRef(companyId, id);
     if (!skill) return null;
     const usedByAgents = await usage(companyId, skill.key);
@@ -4255,7 +4252,6 @@ export function companySkillService(db: Db) {
   }
 
   async function readFile(companyId: string, skillId: string, relativePath: string): Promise<CompanySkillFileDetail | null> {
-    await ensureSkillInventoryCurrent(companyId);
     const skill = await getById(companyId, skillId);
     if (!skill) return null;
 
@@ -6935,6 +6931,7 @@ export function companySkillService(db: Db) {
   }
 
   return {
+    reconcileInventory: ensureSkillInventoryCurrent,
     list,
     listFull,
     getById,
